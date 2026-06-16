@@ -1,1 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<projectInfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="ProjectInfo.xsd">
+    <name>MXB0E</name>
+    <description>New RadioNode BaseBand MultiStandard</description>
+    <creator>ERICSSON ACM-P</creator>
+</projectInfo>
 
