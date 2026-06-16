@@ -63,14 +63,22 @@ def remove_tag_everywhere(root, tag_to_remove):
 # MODIFICA NODEINFO.XML
 # =========================
 def update_nodeinfo(root, nodo, serial_number_bb, device_type, backup_name=None, ip_defgtw=None):
-    # Aggiorna tutti i tag <name>
+    # Aggiorna tutti i tag <name> con il nome nodo in maiuscolo
     for elem in root.iter("name"):
         elem.text = nodo
 
-    # Gestione hardwareSerialNumber
-    if serial_number_bb:
+    # Se ZT e serial valorizzato -> aggiorna hardwareSerialNumber
+    # In tutti gli altri casi (LMT compreso) rimuove il tag
+    if device_type == "ZT" and serial_number_bb:
+        found_hw = False
         for elem in root.iter("hardwareSerialNumber"):
             elem.text = serial_number_bb
+            found_hw = True
+
+        # Se il tag non esiste nel template e serve aggiungerlo
+        if not found_hw:
+            new_elem = ET.SubElement(root, "hardwareSerialNumber")
+            new_elem.text = serial_number_bb
     else:
         remove_tag_everywhere(root, "hardwareSerialNumber")
 
@@ -120,10 +128,10 @@ def build_zip_in_memory(nodo, nodeinfo_xml_string, projectinfo_xml_string):
     zip_buffer = io.BytesIO()
 
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-        # ProjectInfo.xml nella root dello zip
+        # ProjectInfo.xml nella root dello ZIP
         zipf.writestr("ProjectInfo.xml", projectinfo_xml_string)
 
-        # NodeInfo.xml dentro cartella <nodo>
+        # NodeInfo.xml nella cartella del nodo
         zipf.writestr(f"{nodo}/NodeInfo.xml", nodeinfo_xml_string)
 
     zip_buffer.seek(0)
@@ -134,15 +142,13 @@ def build_zip_in_memory(nodo, nodeinfo_xml_string, projectinfo_xml_string):
 # CREAZIONE PROGETTO
 # =========================
 def create_project(nodo, serial_number_bb, device_type, backup_name=None, ip_defgtw=None):
-    log = []
-
     # Controllo esistenza template
     if not os.path.exists(NODEINFO_TEMPLATE):
-        st.error(f"Template mancante: {NODEINFO_TEMPLATE}")
+        st.error("Template NodeInfo.xml mancante.")
         return
 
     if not os.path.exists(PROJECTINFO_TEMPLATE):
-        st.error(f"Template mancante: {PROJECTINFO_TEMPLATE}")
+        st.error("Template ProjectInfo.xml mancante.")
         return
 
     try:
@@ -160,7 +166,6 @@ def create_project(nodo, serial_number_bb, device_type, backup_name=None, ip_def
         )
 
         nodeinfo_xml_string = pretty_xml(node_root)
-        log.append("NodeInfo.xml creato correttamente.")
 
         # ===== PROJECTINFO =====
         project_tree = ET.parse(PROJECTINFO_TEMPLATE)
@@ -168,7 +173,6 @@ def create_project(nodo, serial_number_bb, device_type, backup_name=None, ip_def
 
         project_root = update_projectinfo(project_root, nodo)
         projectinfo_xml_string = pretty_xml(project_root)
-        log.append("ProjectInfo.xml aggiornato correttamente.")
 
         # ===== ZIP =====
         zip_filename, zip_buffer = build_zip_in_memory(
@@ -177,14 +181,10 @@ def create_project(nodo, serial_number_bb, device_type, backup_name=None, ip_def
             projectinfo_xml_string=projectinfo_xml_string
         )
 
-        st.success(f"Progetto creato con successo: {zip_filename}")
-
-        with st.expander("Log elaborazione"):
-            for entry in log:
-                st.write(f"- {entry}")
+        st.success("Progetto creato correttamente.")
 
         st.download_button(
-            "📦 Scarica ZIP",
+            "Scarica ZIP",
             data=zip_buffer,
             file_name=zip_filename,
             mime="application/zip"
@@ -214,11 +214,14 @@ def replace_bb_controller():
             ["ZT", "LMT"]
         )
 
-    # ✅ Normalizzazione in MAIUSCOLO
+    # Node Name normalizzato in MAIUSCOLO
     nodo_input = st.text_input("Node Name")
     nodo = nodo_input.strip().upper()
 
-    serial_number_bb = st.text_input("SerialNumber BB")
+    # SerialNumber visibile solo per ZT
+    serial_number_bb = None
+    if device_type == "ZT":
+        serial_number_bb = st.text_input("SerialNumber BB")
 
     backup_name = None
     ip_defgtw = None
@@ -228,22 +231,18 @@ def replace_bb_controller():
         backup_name = st.text_input("BackUp Name")
         ip_defgtw = st.text_input("IP defGTW O&M")
 
-    # Mostra il valore normalizzato (utile all'utente)
-    if nodo_input:
-        st.caption(f"Node Name normalizzato: **{nodo}**")
-
     # =========================
     # VALIDAZIONE LIVE NODE NAME
     # =========================
     if nodo:
         if device_category == "BaseBand":
             if not re.match(r"^[A-Za-z0-9]{5}$", nodo):
-                st.error("Node Name per BaseBand deve contenere esattamente 5 caratteri alfanumerici (A-Z, 0-9).")
+                st.error("Node Name per BaseBand deve contenere esattamente 5 caratteri alfanumerici.")
                 return
 
         elif device_category == "Controller":
             if not re.match(r"^[A-Za-z0-9]{10}$", nodo):
-                st.error("Node Name per Controller deve contenere esattamente 10 caratteri alfanumerici (A-Z, 0-9).")
+                st.error("Node Name per Controller deve contenere esattamente 10 caratteri alfanumerici.")
                 return
 
     # =========================
@@ -251,7 +250,7 @@ def replace_bb_controller():
     # =========================
     if device_type == "LMT" and ip_defgtw:
         if not validate_ipv4(ip_defgtw):
-            st.error("L'indirizzo IP non è valido. Inserisci un IPv4 corretto (es. 192.168.1.1).")
+            st.error("L'indirizzo IP non è valido.")
             return
 
     # =========================
@@ -265,9 +264,9 @@ def replace_bb_controller():
 
         if not validate_node_name(nodo, device_category):
             if device_category == "BaseBand":
-                st.error("Node Name per BaseBand deve contenere esattamente 5 caratteri alfanumerici (A-Z, 0-9).")
+                st.error("Node Name per BaseBand deve contenere esattamente 5 caratteri alfanumerici.")
             else:
-                st.error("Node Name per Controller deve contenere esattamente 10 caratteri alfanumerici (A-Z, 0-9).")
+                st.error("Node Name per Controller deve contenere esattamente 10 caratteri alfanumerici.")
             return
 
         if device_type == "LMT":
@@ -280,7 +279,7 @@ def replace_bb_controller():
                 return
 
             if not validate_ipv4(ip_defgtw):
-                st.error("L'indirizzo IP non è valido. Inserisci un IPv4 corretto.")
+                st.error("L'indirizzo IP non è valido.")
                 return
 
         create_project(
