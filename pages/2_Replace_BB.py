@@ -22,7 +22,7 @@ PROJECTINFO_TEMPLATE = os.path.join(TEMPLATES_DIR, "ProjectInfo.xml")
 # =========================
 def pretty_xml(root):
     """
-    Restituisce XML formattato e senza righe vuote inutili.
+    Restituisce XML formattato senza righe vuote inutili.
     """
     rough_string = ET.tostring(root, encoding="utf-8")
     reparsed = minidom.parseString(rough_string)
@@ -51,7 +51,6 @@ def validate_ipv4(ip_value):
 def remove_tag_everywhere(root, tag_to_remove):
     """
     Rimuove tutti i tag con un certo nome da tutto l'albero XML.
-    Serve per eliminare hardwareSerialNumber se non valorizzato.
     """
     for parent in root.iter():
         children = list(parent)
@@ -109,21 +108,23 @@ def update_projectinfo(root, nodo):
 # =========================
 def build_zip_in_memory(nodo, nodeinfo_xml_string, projectinfo_xml_string):
     """
-    Struttura ZIP:
+    Struttura ZIP richiesta:
+
     Replace_<nodo>.zip
-    └── Replace_<nodo>/
-        ├── ProjectInfo.xml
-        └── <nodo>/
-            └── NodeInfo.xml
+    ├── ProjectInfo.xml
+    └── <nodo>/
+        └── NodeInfo.xml
     """
     zip_filename = f"Replace_{nodo}.zip"
-    main_folder = f"Replace_{nodo}"
 
     zip_buffer = io.BytesIO()
 
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
-        zipf.writestr(f"{main_folder}/ProjectInfo.xml", projectinfo_xml_string)
-        zipf.writestr(f"{main_folder}/{nodo}/NodeInfo.xml", nodeinfo_xml_string)
+        # ProjectInfo.xml nella root dello zip
+        zipf.writestr("ProjectInfo.xml", projectinfo_xml_string)
+
+        # NodeInfo.xml dentro cartella <nodo>
+        zipf.writestr(f"{nodo}/NodeInfo.xml", nodeinfo_xml_string)
 
     zip_buffer.seek(0)
     return zip_filename, zip_buffer
@@ -213,7 +214,10 @@ def replace_bb_controller():
             ["ZT", "LMT"]
         )
 
-    nodo = st.text_input("Node Name")
+    # ✅ Normalizzazione in MAIUSCOLO
+    nodo_input = st.text_input("Node Name")
+    nodo = nodo_input.strip().upper()
+
     serial_number_bb = st.text_input("SerialNumber BB")
 
     backup_name = None
@@ -223,6 +227,10 @@ def replace_bb_controller():
     if device_type == "LMT":
         backup_name = st.text_input("BackUp Name")
         ip_defgtw = st.text_input("IP defGTW O&M")
+
+    # Mostra il valore normalizzato (utile all'utente)
+    if nodo_input:
+        st.caption(f"Node Name normalizzato: **{nodo}**")
 
     # =========================
     # VALIDAZIONE LIVE NODE NAME
