@@ -2,108 +2,122 @@ import streamlit as st
 import xml.etree.ElementTree as ET
 import xml.dom.minidom as minidom
 import os
-import shutil
 import zipfile
 import re
+import io
 
-# Funzione per creare il progetto
-def create_project(nodo, serial_number_bb, device_type, backup_name=None, ip_defgtw=None):
-    xml_file_path = os.path.join('templates', 'NodeInfo.xml')
-    project_info_path = os.path.join('templates', 'ProjectInfo.xml')
 
-    tree = ET.parse(xml_file_path)
-    root = tree.getroot()
+# =========================
+# CONFIGURAZIONE PATH
+# =========================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATES_DIR = os.path.join(BASE_DIR, "..", "templates")
 
-    for elem in root.iter('name'):
+NODEINFO_TEMPLATE = os.path.join(TEMPLATES_DIR, "NodeInfo.xml")
+PROJECTINFO_TEMPLATE = os.path.join(TEMPLATES_DIR, "ProjectInfo.xml")
+
+
+# =========================
+# FUNZIONI UTILI
+# =========================
+def pretty_xml_from_root(root):
+    """
+    Converte un root XML in stringa leggibile
+    eliminando le righe vuote introdotte da minidom.
+    """
+    rough_string = ET.tostring(root, encoding="utf-8")
+    reparsed = minidom.parseString(rough_string)
+    xml_pretty = reparsed.toprettyxml(indent="  ")
+    xml_pretty = "\n".join(line for line in xml_pretty.split("\n") if line.strip())
+    return xml_pretty
+
+
+def validate_ipv4(ip_value):
+    ip_pattern = r"^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+    return re.match(ip_pattern, ip_value or "") is not None
+
+
+def validate_node_name(nodo, device_category):
+    if device_category == "BaseBand":
+        return re.match(r"^[A-Za-z0-9]{5}$", nodo or "") is not None
+    elif device_category == "Controller":
+        return re.match(r"^[A-Za-z0-9]{10}$", nodo or "") is not None
+    return False
+
+
+def remove_tag_everywhere(root, tag_to_remove):
+    """
+    Rimuove un tag da tutto l'albero XML.
+    """
+    for parent in root.iter():
+        children = list(parent)
+        for child in children:
+            if child.tag == tag_to_remove:
+                parent.remove(child)
+
+
+# =========================
+# MODIFICA NODEINFO.XML
+# =========================
+def update_nodeinfo(root, nodo, serial_number_bb, device_type, backup_name=None, ip_defgtw=None):
+    # Aggiorna tutti i tag <name>
+    for elem in root.iter("name"):
         elem.text = nodo
 
+    # Gestione hardwareSerialNumber
+    hardware_tags = list(root.iter("hardwareSerialNumber"))
     if serial_number_bb:
-        for elem in root.iter('hardwareSerialNumber'):
+        for elem in hardware_tags:
             elem.text = serial_number_bb
     else:
-        for elem in root.findall('hardwareSerialNumber'):
-            root.remove(elem)
+        remove_tag_everywhere(root, "hardwareSerialNumber")
 
+    # Gestione campi LMT
     if device_type == "LMT":
-        ip_pattern = r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
-        if not re.match(ip_pattern, ip_defgtw):
-            st.error("L'indirizzo IP non è valido. Inserisci un indirizzo IPv4 corretto (es. 192.168.1.1)")
-            return
-
-        backup_elem = root.find('backup')
+        backup_elem = root.find(".//backup")
         if backup_elem is None:
-            backup_elem = ET.SubElement(root, 'backup')
-        backup_elem.text = backup_name
+            backup_elem = ET.SubElement(root, "backup")
+        backup_elem.text = backup_name or ""
 
-        router_elem = root.find('defaultRouter')
+        router_elem = root.find(".//defaultRouter")
         if router_elem is None:
-            router_elem = ET.SubElement(root, 'defaultRouter')
-        router_elem.text = ip_defgtw
+            router_elem = ET.SubElement(root, "defaultRouter")
+        router_elem.text = ip_defgtw or ""
 
+    return root
+
+
+# =========================
+# MODIFICA PROJECTINFO.XML
+# =========================
+def update_projectinfo(root, nodo):
+    """
+    Modifica ProjectInfo.xml:
+    aggiorna solo il tag <name>
+    """
+    name_elem = root.find("name")
+    if name_elem is not None:
+        name_elem.text = nodo
+        return root, 1
+    return root, 0
+
+
+# =========================
+# CREA ZIP IN MEMORIA
+# =========================
+def build_zip_in_memory(nodo, nodeinfo_xml_string, projectinfo_xml_string):
+    """
+    Crea lo ZIP in memoria con questa struttura:
+
+    Replace_<nodo>.zip
+    └── Replace_<nodo>/
+        ├── ProjectInfo.xml
+        └── <nodo>/
+            └── NodeInfo.xml
+    """
     main_folder = f"Replace_{nodo}"
-    os.makedirs(main_folder, exist_ok=True)
-
-    sub_folder = os.path.join(main_folder, nodo)
-    os.makedirs(sub_folder, exist_ok=True)
-
-    modified_xml_path = os.path.join(sub_folder, os.path.basename(xml_file_path))
-
-    rough_string = ET.tostring(root, 'utf-8')
-    reparsed = minidom.parseString(rough_string)
-    with open(modified_xml_path, "w", encoding="utf-8") as f:
-        f.write(reparsed.toprettyxml(indent="  "))
-
-    shutil.copy(project_info_path, main_folder)
-
     zip_filename = f"{main_folder}.zip"
-    with zipfile.ZipFile(zip_filename, 'w') as zipf:
-        zipf.write(os.path.join(main_folder, os.path.basename(project_info_path)), os.path.basename(project_info_path))
-        for foldername, subfolders, filenames in os.walk(sub_folder):
-            for filename in filenames:
-                filepath = os.path.join(foldername, filename)
-                arcname = os.path.relpath(filepath, main_folder)
-                zipf.write(filepath, arcname)
 
-    st.success(f"Progetto creato con successo: {zip_filename}")
-    st.write(f"Percorso: {os.path.abspath(zip_filename)}")
-    with open(zip_filename, "rb") as f:
-        st.download_button(
-            "📦 Scarica ZIP",
-            data=f,
-            file_name=zip_filename,
-            mime="application/zip"
-    )
+    zip_buffer = io.BytesIO()
 
-
-# Pagina Replace BB Controller
-def replace_bb_controller():
-    st.title("Replace BB Controller")
-
-    col1, col2 = st.columns(2)
-    with col1:
-        device_category = st.radio("Categoria dispositivo", ["BaseBand", "Controller"])
-    with col2:
-        device_type = st.radio("Tipo dispositivo", ["ZT", "LMT"])
-
-    nodo = st.text_input("Node Name")
-
-    if device_category == "BaseBand":
-        if nodo and not re.match(r'^[A-Za-z0-9]{5}$', nodo):
-            st.error("Node Name per BaseBand deve contenere esattamente 5 caratteri alfanumerici (A-Z, 0-9)")
-            return
-    elif device_category == "Controller":
-        if nodo and not re.match(r'^[A-Za-z0-9]{10}$', nodo):
-            st.error("Node Name per Controller deve contenere esattamente 10 caratteri alfanumerici (A-Z, 0-9)")
-            return
-
-    serial_number_bb = st.text_input("SerialNumber BB")
-
-    backup_name = ip_defgtw = None
-    if device_type == "LMT":
-        backup_name = st.text_input("BackUp Name")
-        ip_defgtw = st.text_input("IP defGTW O&M")
-
-    if st.button("Crea Progetto"):
-        create_project(nodo, serial_number_bb, device_type, backup_name, ip_defgtw)
-replace_bb_controller()
-
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
