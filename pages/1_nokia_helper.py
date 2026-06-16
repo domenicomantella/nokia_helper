@@ -6,7 +6,7 @@ import io
 
 # --- Costanti e Funzioni di elaborazione ---
 class ProcessingMode:
-    FULL_PROCESSING = "Elaborazione Completa (Modifica XML + Danti Excel)"
+    FULL_PROCESSING = "Elaborazione Completa (Modifica XML + Dati Excel)"
     NAMESPACE_STRIPPING = "Solo Pulizia Namespace e 'Roma4'"
 
 def strip_namespace(element):
