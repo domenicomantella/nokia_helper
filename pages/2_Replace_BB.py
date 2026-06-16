@@ -97,4 +97,5 @@ def replace_bb_controller():
 
     if st.button("Crea Progetto"):
         create_project(nodo, serial_number_bb, device_type, backup_name, ip_defgtw)
+replace_bb_controller()
 
