@@ -66,6 +66,14 @@ def create_project(nodo, serial_number_bb, device_type, backup_name=None, ip_def
 
     st.success(f"Progetto creato con successo: {zip_filename}")
     st.write(f"Percorso: {os.path.abspath(zip_filename)}")
+    with open(zip_filename, "rb") as f:
+    st.download_button(
+        "📦 Scarica ZIP",
+        data=f,
+        file_name=zip_filename,
+        mime="application/zip"
+    )
+
 
 # Pagina Replace BB Controller
 def replace_bb_controller():
