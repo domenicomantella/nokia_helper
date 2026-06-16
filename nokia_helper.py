@@ -6,7 +6,7 @@ import io
 
 # --- Costanti e Funzioni di elaborazione ---
 class ProcessingMode:
-    FULL_PROCESSING = "Elaborazione Completa (Modifica XML + Dati Excel)"
+    FULL_PROCESSING = "Elaborazione Completa (Modifica XML + Danti Excel)"
     NAMESPACE_STRIPPING = "Solo Pulizia Namespace e 'Roma4'"
 
 def strip_namespace(element):
@@ -21,20 +21,25 @@ def trasforma_bcxu(logicalBcxuAddress, ip_to_number_table):
 def process_xml(xml_file, excel_file, search_key, mode):
     log = []
     try:
+        # 1. Lettura del file e pulizia testuale immediata (Valida per ENTRABBI i modi)
         xml_string = xml_file.read().decode('utf-8')
         string_modified = False
+        
         if "Roma4" in xml_string:
             xml_string = xml_string.replace("Roma4", "PLMN")
-            log.append("Sostituzione 'Roma4' -> 'PLMN' effettuata.")
+            log.append("Sostituzione 'Roma4' -> 'PLMN' effettuata nel testo XML.")
             string_modified = True
 
+        # 2. Creazione dell'oggetto XML basato sul testo già pulito da Roma4
         root = ET.fromstring(xml_string)
         strip_namespace(root)
         log.append("Pulizia del Namespace effettuata.")
 
+        # 3. Gestione differenziata in base alla modalità scelta
         if mode == ProcessingMode.NAMESPACE_STRIPPING:
             return save_file(root, xml_file.name, mode), log
 
+        # --- Da qui in poi: Modalità Elaborazione Completa ---
         wb = openpyxl.load_workbook(excel_file, data_only=True)
         tnl_sheet = wb['TNL_TI_SRAN']
 
@@ -84,6 +89,10 @@ def process_xml(xml_file, excel_file, search_key, mode):
 
         if search_key not in tnl_data:
             log.append(f"Valore '{search_key}' non trovato in Excel.")
+            # Se Excel fallisce ma abbiamo comunque pulito Roma4/Namespace, restituiamo il file parziale
+            if string_modified:
+                log.append("Generato comunque il file con la sola pulizia effettuata.")
+                return save_file(root, xml_file.name, ProcessingMode.NAMESPACE_STRIPPING), log
             return None, log
 
         excel_values = tnl_data[search_key]
@@ -125,8 +134,9 @@ def process_xml(xml_file, excel_file, search_key, mode):
                 val_after = after_params.get(key, "Non presente")
                 log.append(f"{key}: {val_before} -> {val_after}")
 
+        # Se non ci sono modifiche da Excel MA Roma4 è stato pulito, l'applicazione deve comunque sputare il file
         if not modifiche_effettuate and not string_modified:
-            log.append("Nessuna modifica effettuata.")
+            log.append("Nessuna modifica effettuata (Né da Excel né pulizia testo).")
             return None, log
 
         return save_file(root, xml_file.name, mode), log
@@ -137,7 +147,6 @@ def process_xml(xml_file, excel_file, search_key, mode):
 
 def save_file(root, original_filename, mode):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    # Estrae il nome file in sicurezza senza usare os.path
     base_name = original_filename.rsplit('.', 1)[0] if '.' in original_filename else original_filename
     mode_suffix = "_solo_pulizia" if mode == ProcessingMode.NAMESPACE_STRIPPING else "_modificato"
     file_output_name = f"{base_name}{mode_suffix}_{timestamp}.xml"
