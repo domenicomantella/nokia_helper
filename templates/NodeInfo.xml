@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <nodeInfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:noNamespaceSchemaLocation="HardwareReplaceNodeInfo.xsd">
-   <name>PV42E</name>
-   <hardwareSerialNumber>E23E994221</hardwareSerialNumber>
+   <name></name>
+   <hardwareSerialNumber></hardwareSerialNumber>
    </nodeInfo>
