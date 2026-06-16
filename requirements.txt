@@ -1,0 +1,6 @@
+streamlit
+xml.etree.ElementTree
+openpyxl
+datetime
+os
+io
