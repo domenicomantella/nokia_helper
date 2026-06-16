@@ -23,7 +23,7 @@ def process_xml(xml_file, excel_file, search_key, mode):
     try:
         xml_string = xml_file.read().decode('utf-8')
         string_modified = False
-        if "Pomezia2" in xml_string:
+        if "Roma4" in xml_string:
             xml_string = xml_string.replace("Roma4", "PLMN")
             log.append("Sostituzione 'Roma4' -> 'PLMN' effettuata.")
             string_modified = True
