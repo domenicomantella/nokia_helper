@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE raml SYSTEM 'raml20.dtd'>
+<raml version="2.0" xmlns="raml20.xsd">
+  <cmData type="plan">
+    <header>
+      <log dateTime="2026-06-17T12:53:37.000+02:00" action="created" appInfo="PlanExporter">UIValues are used</log>
+    </header>
+    <managedObject class="SYNC" version="MNL25R1_2420_110" distName="PLMN-PLMN/MRBTS-/MNL-1/MNLENT-1/SYNC-1" operation="update">
+      <p name="actEcpriMasterClock">false</p>
+      <p name="actRuIntelligentSynceAstHoTime">false</p>
+      <p name="btsSyncMode">1</p>
+    </managedObject>
+    <managedObject class="TOP" version="MNL25R1_2420_110" distName="PLMN-PLMN/MRBTS-/MNL-1/MNLENT-1/SYNC-1/CLOCK-1/TOP-1" operation="update">
+      <p name="sPlaneDscp">46</p>
+      <p name="sPlaneIpAddressDN">MRBTS-/TNLSVC-1/TNL-1/IPNO-1/IPIF-1/IPADDRESSV4-1</p>
+      <p name="topDomainNumber">44</p>
+    </managedObject>
+    <managedObject class="TOPP" version="MNL25R1_2420_110" distName="PLMN-PLMN/MRBTS-/MNL-1/MNLENT-1/SYNC-1/CLOCK-1/TOP-1/TOPP-1" operation="update">
+      <list name="acceptedClockClass">
+        <p>6</p>
+        <p>7</p>
+      </list>
+      <p name="syncMessageRate">64</p>
+      <list name="topMasterList">
+        <item>
+          <p name="localPriority">128</p>
+          <p name="masterIpAddr">10.11.0.60</p>
+          <p name="maximumNetworkTimingError">600</p>
+          <p name="phaseErrorComp">0</p>
+          <p name="topMasterId">1</p>
+        </item>
+      </list>
+      <p name="topStandardProfile">2</p>
+    </managedObject>
+  </cmData>
+</raml>
