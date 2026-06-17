@@ -9,22 +9,25 @@ class ProcessingMode:
     FULL_PROCESSING = "Elaborazione Completa (Modifica XML + Dati Excel)"
     NAMESPACE_STRIPPING = "Solo Pulizia Namespace e 'Roma4'"
 
+
 def strip_namespace(element):
     if '}' in element.tag:
         element.tag = element.tag.split('}', 1)[1]
     for subelement in element:
         strip_namespace(subelement)
 
+
 def trasforma_bcxu(logicalBcxuAddress, ip_to_number_table):
     return ip_to_number_table.get(logicalBcxuAddress)
+
 
 def process_xml(xml_file, excel_file, search_key, mode):
     log = []
     try:
-        # 1. Lettura del file e pulizia testuale immediata (Valida per ENTRABBI i modi)
+        # 1. Lettura del file e pulizia testuale immediata (valida per entrambi i modi)
         xml_string = xml_file.read().decode('utf-8')
         string_modified = False
-        
+
         if "Roma4" in xml_string:
             xml_string = xml_string.replace("Roma4", "PLMN")
             log.append("Sostituzione 'Roma4' -> 'PLMN' effettuata nel testo XML.")
@@ -33,9 +36,9 @@ def process_xml(xml_file, excel_file, search_key, mode):
         # 2. Creazione dell'oggetto XML basato sul testo già pulito da Roma4
         root = ET.fromstring(xml_string)
         strip_namespace(root)
-        log.append("Pulizia del Namespace effettuata.")
+        log.append("Pulizia del namespace effettuata.")
 
-        # 3. Gestione differenziata in base alla modalità scelta
+        # 3. Se è stata scelta la modalità solo pulizia, esce subito
         if mode == ProcessingMode.NAMESPACE_STRIPPING:
             return save_file(root, xml_file.name, mode), log
 
@@ -69,30 +72,33 @@ def process_xml(xml_file, excel_file, search_key, mode):
             # BRESCIA BBS70D
             "19.140.1.152": "0", "19.140.1.153": "1", "19.140.1.154": "2",
             "19.140.1.155": "3", "19.140.1.156": "4", "19.140.1.157": "5",
-            "19.140.1.158": "6", "19.140.1.159": "7", 
+            "19.140.1.158": "6", "19.140.1.159": "7",
+
             # MILANO Malpaga BMI70D
-            "19.135.1.152": "0", "19.135.1.153": "1", "19.135.1.154": "2", 
-            "19.135.1.155": "3", "19.135.1.156": "4", "19.135.1.157": "5", 
-            "19.135.1.158": "6", "19.135.1.159": "7", "19.135.1.160": "8", 
+            "19.135.1.152": "0", "19.135.1.153": "1", "19.135.1.154": "2",
+            "19.135.1.155": "3", "19.135.1.156": "4", "19.135.1.157": "5",
+            "19.135.1.158": "6", "19.135.1.159": "7", "19.135.1.160": "8",
             "19.135.1.161": "9", "19.135.1.162": "10", "19.135.1.163": "11",
             "19.136.1.164": "12", "19.135.1.165": "13", "19.135.1.166": "14",
-            "19.135.1.167": "15", 
+            "19.135.1.167": "15",
+
             # BERGAMO BBG70D
             "19.139.1.152": "0", "19.139.1.153": "1", "19.139.1.154": "2",
             "19.139.1.155": "3", "19.139.1.156": "4", "19.139.1.157": "5",
             "19.139.1.158": "6", "19.139.1.159": "7",
+
             # MILANO Bersaglio BMI71D
-            "19.136.1.152": "0", "19.136.1.153": "1", "19.136.1.154": "2", 
-            "19.136.1.155": "3", "19.136.1.156": "4", "19.136.1.157": "5", 
+            "19.136.1.152": "0", "19.136.1.153": "1", "19.136.1.154": "2",
+            "19.136.1.155": "3", "19.136.1.156": "4", "19.136.1.157": "5",
             "19.136.1.158": "6", "19.136.1.159": "7",
         }
 
+        search_key = search_key.strip()
+
+        # CORREZIONE IMPORTANTE:
+        # se la chiave non è nell'Excel, errore e stop netto
         if search_key not in tnl_data:
-            log.append(f"Valore '{search_key}' non trovato in Excel.")
-            # Se Excel fallisce ma abbiamo comunque pulito Roma4/Namespace, restituiamo il file parziale
-            if string_modified:
-                log.append("Generato comunque il file con la sola pulizia effettuata.")
-                return save_file(root, xml_file.name, ProcessingMode.NAMESPACE_STRIPPING), log
+            log.append(f"ERRORE: valore '{search_key}' non trovato nel file Excel.")
             return None, log
 
         excel_values = tnl_data[search_key]
@@ -102,6 +108,7 @@ def process_xml(xml_file, excel_file, search_key, mode):
         for mo in all_mo:
             dist_name = mo.get('distName')
             log.append(f"Elaborazione: {dist_name}")
+
             before_params = {p.get('name'): p.text for p in mo.findall('p')}
 
             bcxu_address_excel = excel_values.get('logicalBcxuAddress')
@@ -116,8 +123,10 @@ def process_xml(xml_file, excel_file, search_key, mode):
             }
 
             existing_elements = {p.get('name'): p for p in mo.findall('p')}
+
             for name, value in params_to_add.items():
                 value_str = str(value) if value is not None else ''
+
                 if name in existing_elements:
                     if existing_elements[name].text != value_str:
                         existing_elements[name].text = value_str
@@ -129,21 +138,22 @@ def process_xml(xml_file, excel_file, search_key, mode):
                     modifiche_effettuate = True
 
             after_params = {p.get('name'): p.text for p in mo.findall('p')}
+
             for key in sorted(set(before_params.keys()) | set(after_params.keys())):
                 val_before = before_params.get(key, "Non presente")
                 val_after = after_params.get(key, "Non presente")
                 log.append(f"{key}: {val_before} -> {val_after}")
 
-        # Se non ci sono modifiche da Excel MA Roma4 è stato pulito, l'applicazione deve comunque sputare il file
         if not modifiche_effettuate and not string_modified:
-            log.append("Nessuna modifica effettuata (Né da Excel né pulizia testo).")
+            log.append("Nessuna modifica effettuata (né da Excel né da pulizia testo).")
             return None, log
 
         return save_file(root, xml_file.name, mode), log
 
     except Exception as e:
-        log.append(f"Errore generale: {e}")
+        log.append(f"ERRORE: {e}")
         return None, log
+
 
 def save_file(root, original_filename, mode):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -156,12 +166,17 @@ def save_file(root, original_filename, mode):
     output_io = io.BytesIO()
     tree.write(output_io, encoding='utf-8', xml_declaration=True)
     output_io.seek(0)
+
     return file_output_name, output_io
+
 
 # --- Interfaccia Streamlit ---
 st.title("XML & Excel Processor Web App")
 
-mode = st.selectbox("Modalità Elaborazione:", [ProcessingMode.FULL_PROCESSING, ProcessingMode.NAMESPACE_STRIPPING])
+mode = st.selectbox(
+    "Modalità Elaborazione:",
+    [ProcessingMode.FULL_PROCESSING, ProcessingMode.NAMESPACE_STRIPPING]
+)
 
 xml_file = st.file_uploader("Carica file XML", type=["xml"])
 excel_file = None
@@ -174,13 +189,23 @@ if mode == ProcessingMode.FULL_PROCESSING:
 if st.button("Avvia Elaborazione"):
     if not xml_file:
         st.error("Seleziona un file XML.")
-    elif mode == ProcessingMode.FULL_PROCESSING and (not excel_file or not search_key):
+    elif mode == ProcessingMode.FULL_PROCESSING and (not excel_file or not search_key or not search_key.strip()):
         st.error("Compila tutti i campi richiesti per l'elaborazione completa.")
     else:
         result, log = process_xml(xml_file, excel_file, search_key, mode)
+
         for entry in log:
-            st.text(entry)
+            if entry.startswith("ERRORE:"):
+                st.error(entry)
+            else:
+                st.text(entry)
+
         if result:
             file_name, file_data = result
             st.success(f"Elaborazione completata. File pronto per il download: {file_name}")
-            st.download_button("Scarica file XML modificato", data=file_data, file_name=file_name, mime="application/xml")
+            st.download_button(
+                "Scarica file XML modificato",
+                data=file_data,
+                file_name=file_name,
+                mime="application/xml"
+            )
