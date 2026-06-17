@@ -2,11 +2,11 @@ import streamlit as st
 import pandas as pd
 import os
 
-st.title("📊 Ricerca Trasporti")
+st.title("📊 Ricerca TNL")
 
 # --- CONFIG ---
-PATTERN = "TRASPORTO"       # stringa presente nei nomi file
-SHEET_NAME = "ip_NO"        # nome foglio fisso
+PATTERN = "SRAN"       # stringa presente nei nomi file
+SHEET_NAME = "TNL_TI_SRAN"        # nome foglio fisso
 
 # --- SCELTA MODALITÀ ---
 mode = st.radio(
@@ -22,7 +22,7 @@ if mode == "Cartella Teams":
     st.warning("""
     📌 ISTRUZIONI:
     - Vai su Teams
-    - Apri la cartella Trasporti
+    - Apri la cartella dove sono depositati i TNL
     - Clicca "Aggiungi collegamento a OneDrive"
     - Copia il percorso da Esplora Risorse
     """)
