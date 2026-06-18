@@ -1,12 +1,12 @@
 import streamlit as st
 import pandas as pd
 
-st.title("📊 Ricerca Trasporti")
+st.title("📊 Ricerca TNL")
 
 # =========================================================
 # CONFIG
 # =========================================================
-SHEET_NAME = "ip_NO"   # <-- metti il nome reale del foglio
+SHEET_NAME = "TNL_TI_SRAN"   # <-- metti il nome reale del foglio
 
 st.warning("""
 📌 ISTRUZIONI:
