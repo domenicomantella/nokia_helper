@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import os
 
 st.title("📊 Ricerca TNL")
 
@@ -49,11 +50,6 @@ LABEL_MAP = {
     "IPRT - 5G U/C Gateway 1": "Indirizzo IP Def GTW 45G",
     "5G VLAN#1 U/C/S-plane (IVIF) - 5G VLAN id#1 for U/C/S-Plane": "VLAN UserPlane 45G",
 
-    # 2G
-    "BSC": "BSC",
-    "2G VLAN#5 omusig  (IVIF) - 2G VLAN network interface #5 IP@": "OMUSIG",
-    "2G VLAN#5 omusig  (IVIF) - 2G VLAN id#5 for omusig-Plane": "Vlan GSM",
-
     # SINCRONISMO
     "Features - Sync Type": "Tipo Sincronismo",
     "TOP - ToP master IP@": "Indirizzo IP Time Server",
@@ -61,7 +57,12 @@ LABEL_MAP = {
     # IPSEC
     "Addressing IPNO - 4G logical Control Plane IP@": "Indirizzo IPSec 4G",
     "Addressing IPNO - 5G logical Control Plane IP@": "Indirizzo IPSec 5G",
-    "IPSECC - SEC-Gw IP@": "TEP (SecGTW)"
+    "IPSECC - SEC-Gw IP@": "TEP (SecGTW)",
+
+    # 2G
+    "BSC": "BSC",
+    "2G VLAN#5 omusig  (IVIF) - 2G VLAN network interface #5 IP@": "OMUSIG",
+    "2G VLAN#5 omusig  (IVIF) - 2G VLAN id#5 for omusig-Plane": "Vlan GSM"
 }
 
 # =========================================================
@@ -74,6 +75,8 @@ def clean_numeric_string(value):
         return ""
 
     # elimina .0 solo dagli interi letti come float
+    # esempio: 123456.0 -> 123456
+    # non tocca IP tipo 10.0.0.1
     if value.endswith(".0") and value[:-2].replace("-", "").isdigit():
         return value[:-2]
 
@@ -83,12 +86,48 @@ def clean_numeric_string(value):
 @st.cache_data
 def load_bsc_mapping():
     try:
-        df_bsc = pd.read_csv(BSC_MAPPING_FILE, dtype=str)
+        if not os.path.exists(BSC_MAPPING_FILE):
+            st.error(f"❌ File mapping BSC non trovato: {BSC_MAPPING_FILE}")
+            return {}
 
-        df_bsc["BSC Id"] = df_bsc["BSC Id"].apply(clean_numeric_string)
-        df_bsc["BSC Name"] = df_bsc["BSC Name"].fillna("").astype(str).str.strip()
+        # sep=None + engine="python" prova a riconoscere automaticamente "," oppure ";"
+        df_bsc = pd.read_csv(
+            BSC_MAPPING_FILE,
+            dtype=str,
+            sep=None,
+            engine="python"
+        )
 
-        return dict(zip(df_bsc["BSC Id"], df_bsc["BSC Name"]))
+        # pulizia nomi colonne
+        df_bsc.columns = df_bsc.columns.astype(str).str.strip()
+
+        # DEBUG utile: puoi lasciarlo durante i test
+        with st.expander("🔧 Debug mapping BSC"):
+            st.write("Colonne CSV rilevate:", df_bsc.columns.tolist())
+
+        col_id = None
+        col_name = None
+
+        for col in df_bsc.columns:
+            normalized = col.lower().replace(" ", "").replace("_", "").replace("-", "")
+
+            if "bsc" in normalized and "id" in normalized:
+                col_id = col
+
+            if "bsc" in normalized and ("name" in normalized or "nome" in normalized):
+                col_name = col
+
+        if not col_id or not col_name:
+            st.error(
+                "❌ Colonne BSC non riconosciute nel CSV. "
+                "Servono una colonna tipo 'BSC Id' e una tipo 'BSC Name'."
+            )
+            return {}
+
+        df_bsc[col_id] = df_bsc[col_id].apply(clean_numeric_string)
+        df_bsc[col_name] = df_bsc[col_name].fillna("").astype(str).str.strip()
+
+        return dict(zip(df_bsc[col_id], df_bsc[col_name]))
 
     except Exception as e:
         st.error(f"Errore lettura mapping BSC: {e}")
@@ -157,7 +196,7 @@ if uploaded_files:
         try:
             df = pd.read_excel(file, sheet_name=SHEET_NAME, header=[0, 1])
 
-            # Flatten Header multi-riga
+            # Flatten header multi-riga
             df.columns = [
                 f"{str(c[0]).strip()} - {str(c[1]).strip()}"
                 for c in df.columns
@@ -351,5 +390,5 @@ if uploaded_files:
 
     render_section("🔐 IPSec", row, DET_IPSEC)
 
-    # 2G sempre visibile, come richiesto ora che usiamo mapping BSC
+    # 2G sempre visibile
     render_section_always("📞 Dettaglio 2G", row, DET_2G)
