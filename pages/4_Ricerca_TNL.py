@@ -26,20 +26,17 @@ uploaded_files = st.file_uploader(
 )
 
 # =========================================================
-# LABEL MAP (nomi leggibili in UI)
+# LABEL MAP
 # =========================================================
 LABEL_MAP = {
-    # -------------------------
+
     # ANAGRAFICA
-    # -------------------------
     "SiteMainPar - eNB id": "MRBTS Id",
     "SiteMainPar - BTS Name": "Sito",
     "SiteMainPar - eNB Name": "Nome",
     "source_file": "File sorgente",
 
-    # -------------------------
     # 4G
-    # -------------------------
     "VLAN#2 M-plane (IVIF) - SRAN VLAN network interface #2 IP@": "Indirizzo IP O&M",
     "IPRT - DCN Gateway 2": "Indirizzo IP Def GTW",
     "VLAN#2 M-plane (IVIF) - SRAN VLAN id#2 for M-Plane": "VLAN O&M",
@@ -47,31 +44,23 @@ LABEL_MAP = {
     "IPRT - 4G U/C Gateway 1": "Indirizzo IP Def GTW 45G",
     "4G VLAN#1 U/C/S-plane (IVIF) - 4G VLAN id#1 for U/C/S-Plane": "VLAN UserPlane 45G",
 
-    # -------------------------
     # 5G
-    # -------------------------
     "5G VLAN#1 U/C/S-plane (IVIF) - 5G VLAN network interface #1 IP@": "Indirizzo IP 45G",
     "IPRT - 5G U/C Gateway 1": "Indirizzo IP Def GTW 45G",
     "5G VLAN#1 U/C/S-plane (IVIF) - 5G VLAN id#1 for U/C/S-Plane": "VLAN UserPlane 45G",
 
-    # -------------------------
-    # 2G
-    # -------------------------
-    "2G VLAN#4 U/C-plane (IVIF) - 2G VLAN id#4 for U/C-Plane": "VLAN 2G U/C",
-    "2G VLAN#5 omusig  (IVIF) - 2G VLAN id#5 for omusig-Plane": "VLAN 2G omusig",
-
-    # -------------------------
     # SINCRONISMO
-    # -------------------------
-    "Features - Sync Type": "Tipo sincronismo",
-    "INTP - TP5000 IP address": "TP5000 IP address",
+    "Features - Sync Type": "Tipo Sincronismo",
+    "TOP - ToP master IP@": "Indirizzo IP Time Server",
 
-    # -------------------------
     # IPSEC
-    # -------------------------
     "Addressing IPNO - 4G logical Control Plane IP@": "Indirizzo IPSec 4G",
     "Addressing IPNO - 5G logical Control Plane IP@": "Indirizzo IPSec 5G",
-    "IPSECC - SEC-Gw IP@": "TEP (SecGTW)"
+    "IPSECC - SEC-Gw IP@": "TEP (SecGTW)",
+
+    # 2G (placeholder)
+    "2G VLAN#4 U/C-plane (IVIF) - 2G VLAN id#4 for U/C-Plane": "VLAN 2G U/C",
+    "2G VLAN#5 omusig  (IVIF) - 2G VLAN id#5 for omusig-Plane": "VLAN 2G omusig"
 }
 
 # =========================================================
@@ -99,7 +88,6 @@ def render_section(title, df, cols):
 
         st.dataframe(out, use_container_width=True, hide_index=True)
 
-
 # =========================================================
 # CARICAMENTO DATI
 # =========================================================
@@ -111,22 +99,19 @@ if uploaded_files:
         try:
             df = pd.read_excel(file, sheet_name=SHEET_NAME, header=[0, 1])
 
-            # Flatten colonne multiheader
+            # Flatten header
             df.columns = [
                 f"{str(c[0]).strip()} - {str(c[1]).strip()}"
                 for c in df.columns
             ]
 
-            # Rimuove la prima riga descrittiva sotto l'intestazione
+            # Rimuove riga descrittiva
             df = df.iloc[1:]
 
-            # Elimina righe completamente vuote
+            # Pulizia
             df = df.dropna(how="all")
-
-            # Elimina colonne unnamed
             df = df.loc[:, ~df.columns.str.contains("Unnamed", case=False)]
 
-            # Aggiunge file sorgente
             df["source_file"] = file.name
 
             df_list.append(df)
@@ -140,14 +125,10 @@ if uploaded_files:
 
     full_df = pd.concat(df_list, ignore_index=True)
 
-    # Converte tutto in stringa
+    # Converti a stringa
     full_df = full_df.astype(str)
 
-    # =========================================================
-    # FIX .0 SOLO SU INTERI LETTI COME FLOAT
-    # Esempio: 123456.0 -> 123456
-    # NON tocca IP tipo 10.0.0.1
-    # =========================================================
+    # FIX .0 solo su interi
     full_df = full_df.replace(r"^(-?\d+)\.0$", r"\1", regex=True)
 
     st.success(f"✅ File caricati: {len(uploaded_files)}")
@@ -176,26 +157,17 @@ if uploaded_files:
 
     if search_mrbts:
         filtered_df = filtered_df[
-            filtered_df.apply(
-                lambda r: r.str.contains(search_mrbts, case=False, regex=False).any(),
-                axis=1
-            )
+            filtered_df.apply(lambda r: r.str.contains(search_mrbts, case=False, regex=False).any(), axis=1)
         ]
 
     if search_sito:
         filtered_df = filtered_df[
-            filtered_df.apply(
-                lambda r: r.str.contains(search_sito, case=False, regex=False).any(),
-                axis=1
-            )
+            filtered_df.apply(lambda r: r.str.contains(search_sito, case=False, regex=False).any(), axis=1)
         ]
 
     if search_free:
         filtered_df = filtered_df[
-            filtered_df.apply(
-                lambda r: r.str.contains(search_free, case=False, regex=False).any(),
-                axis=1
-            )
+            filtered_df.apply(lambda r: r.str.contains(search_free, case=False, regex=False).any(), axis=1)
         ]
 
     st.write(f"Risultati trovati: {len(filtered_df)}")
@@ -218,10 +190,7 @@ if uploaded_files:
 
     valid_preview = [c for c in preview_cols if c in filtered_df.columns]
 
-    st.dataframe(
-        filtered_df[valid_preview] if valid_preview else filtered_df,
-        use_container_width=True
-    )
+    st.dataframe(filtered_df[valid_preview] if valid_preview else filtered_df)
 
     selected_index = st.selectbox(
         "Seleziona riga",
@@ -236,10 +205,6 @@ if uploaded_files:
     # =========================================================
     # SEZIONI
     # =========================================================
-
-    # -------------------------
-    # ANAGRAFICA
-    # -------------------------
     ANAGRAFICA = [
         "SiteMainPar - eNB id",
         "SiteMainPar - BTS Name",
@@ -247,9 +212,6 @@ if uploaded_files:
         "source_file"
     ]
 
-    # -------------------------
-    # 4G
-    # -------------------------
     DET_4G = [
         "VLAN#2 M-plane (IVIF) - SRAN VLAN network interface #2 IP@",
         "IPRT - DCN Gateway 2",
@@ -259,46 +221,42 @@ if uploaded_files:
         "4G VLAN#1 U/C/S-plane (IVIF) - 4G VLAN id#1 for U/C/S-Plane"
     ]
 
-    # -------------------------
-    # 5G
-    # -------------------------
     DET_5G = [
         "5G VLAN#1 U/C/S-plane (IVIF) - 5G VLAN network interface #1 IP@",
         "IPRT - 5G U/C Gateway 1",
         "5G VLAN#1 U/C/S-plane (IVIF) - 5G VLAN id#1 for U/C/S-Plane"
     ]
 
-    # -------------------------
-    # 2G
-    # -------------------------
-    DET_2G = [
-        "2G VLAN#4 U/C-plane (IVIF) - 2G VLAN id#4 for U/C-Plane",
-        "2G VLAN#5 omusig  (IVIF) - 2G VLAN id#5 for omusig-Plane"
-    ]
-
-    # -------------------------
-    # SINCRONISMO
-    # -------------------------
     DET_SYNC = [
         "Features - Sync Type",
-        "INTP - TP5000 IP address"
+        "TOP - ToP master IP@"
     ]
 
-    # -------------------------
-    # IPSEC
-    # -------------------------
     DET_IPSEC = [
         "Addressing IPNO - 4G logical Control Plane IP@",
         "Addressing IPNO - 5G logical Control Plane IP@",
         "IPSECC - SEC-Gw IP@"
     ]
 
-    # =========================================================
+    DET_2G = [
+        "2G VLAN#4 U/C-plane (IVIF) - 2G VLAN id#4 for U/C-Plane",
+        "2G VLAN#5 omusig  (IVIF) - 2G VLAN id#5 for omusig-Plane"
+    ]
+
     # OUTPUT
-    # =========================================================
     render_section("🧾 Anagrafica", row, ANAGRAFICA)
     render_section("📡 Dettaglio 4G", row, DET_4G)
     render_section("🛰️ Dettaglio 5G", row, DET_5G)
-    render_section("📞 Dettaglio 2G", row, DET_2G)
-    render_section("⏱️ Sincronismo", row, DET_SYNC)
+
+    # Sync SEMPRE visibile
+    st.subheader("⏱️ Sincronismo")
+    valid_cols = [c for c in DET_SYNC if c in row.columns]
+
+    if valid_cols:
+        out = row[valid_cols].T.reset_index()
+        out.columns = ["Campo", "Valore"]
+        out["Campo"] = out["Campo"].apply(lambda x: LABEL_MAP.get(x, x))
+        st.dataframe(out, use_container_width=True, hide_index=True)
+
     render_section("🔐 IPSec", row, DET_IPSEC)
+    render_section("📞 Dettaglio 2G", row, DET_2G)
