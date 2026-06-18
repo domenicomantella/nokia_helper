@@ -420,16 +420,35 @@ if uploaded_files:
     ]
 
     # =========================================================
-    # OUTPUT
+    # UI A TAB
     # =========================================================
-    render_section("🧾 Anagrafica", row, ANAGRAFICA)
-    render_section("📡 Dettaglio 4G", row, DET_4G)
-    render_section("🛰️ Dettaglio 5G", row, DET_5G)
 
-    # Sincronismo sempre visibile
-    render_section_always("⏱️ Sincronismo", row, DET_SYNC)
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "🧾 Anagrafica",
+        "📡 4G",
+        "🛰️ 5G",
+        "📞 2G",
+        "🔐 IPSec",
+        "⏱️ Sync"
+    ])
 
-    render_section("🔐 IPSec", row, DET_IPSEC)
+    with tab1:
+        render_section("Anagrafica", row, ANAGRAFICA)
 
-    # 2G sempre visibile
-    render_section_always("📞 Dettaglio 2G", row, DET_2G)
+    with tab2:
+        render_section("Dettaglio 4G", row, DET_4G)
+
+    with tab3:
+        render_section("Dettaglio 5G", row, DET_5G)
+
+    with tab4:
+        # 2G sempre visibile
+        render_section_always("Dettaglio 2G", row, DET_2G)
+
+    with tab5:
+        render_section("IPSec", row, DET_IPSEC)
+
+    with tab6:
+        # Sync sempre visibile
+        render_section_always("Sincronismo", row, DET_SYNC)
+
