@@ -6,12 +6,11 @@ st.title("📊 Ricerca TNL")
 # =========================================================
 # CONFIG
 # =========================================================
-SHEET_NAME = "TNL_TI_SRAN"   # <-- metti il nome reale del foglio
+SHEET_NAME = "TNL_TI_SRAN"
 
 st.warning("""
 📌 ISTRUZIONI:
 - I file devono essere presi dalla cartella Teams ufficiale
-- Si consiglia di usare "Aggiungi collegamento a OneDrive"
 - Assicurarsi di avere file aggiornati prima del caricamento
 
 ⚠️ Carica solo i file Excel corretti
@@ -31,30 +30,22 @@ uploaded_files = st.file_uploader(
 # =========================================================
 # FUNZIONI UTILI
 # =========================================================
-def columns_present(df, columns):
-    """Restituisce solo le colonne effettivamente presenti nel dataframe."""
-    return [col for col in columns if col in df.columns]
-
-def section_has_data(row_df, columns):
-    """Verifica se almeno una delle colonne della sezione contiene un valore utile."""
-    existing = columns_present(row_df, columns)
-    if not existing:
+def section_has_data(df, cols):
+    valid_cols = [c for c in cols if c in df.columns]
+    if not valid_cols:
         return False
 
-    temp = row_df[existing].copy()
-
-    # converte tutto in stringa, toglie spazi e NaN
+    temp = df[valid_cols].copy()
     temp = temp.fillna("").astype(str).apply(lambda col: col.str.strip())
-
-    # se esiste almeno una cella valorizzata
     return (temp != "").any().any()
 
-def render_section(title, row_df, columns):
-    """Mostra la sezione solo se ci sono dati."""
-    if section_has_data(row_df, columns):
+
+def render_section(title, df, cols):
+    valid_cols = [c for c in cols if c in df.columns]
+
+    if section_has_data(df, cols):
         st.subheader(title)
-        existing = columns_present(row_df, columns)
-        section_df = row_df[existing].T.reset_index()
+        section_df = df[valid_cols].T.reset_index()
         section_df.columns = ["Campo", "Valore"]
         st.dataframe(section_df, use_container_width=True, hide_index=True)
 
@@ -66,33 +57,33 @@ if uploaded_files:
     df_list = []
 
     for file in uploaded_files:
-    try:
-        df = pd.read_excel(file, sheet_name=SHEET_NAME, header=[0, 1])
+        try:
+            df = pd.read_excel(file, sheet_name=SHEET_NAME, header=[0, 1])
 
-        # 🔥 appiattisce colonne
-        df.columns = [
-            f"{str(col[0]).strip()} - {str(col[1]).strip()}"
-            for col in df.columns
-        ]
+            # 🔥 appiattisce intestazioni
+            df.columns = [
+                f"{str(col[0]).strip()} - {str(col[1]).strip()}"
+                for col in df.columns
+            ]
 
-        # 🔥 RIMUOVE righe descrittive (prime 1-2 righe dopo header)
-        df = df.iloc[1:]   # ← questo è CRUCIALE nel tuo caso
+            # 🔥 elimina righe descrittive
+            df = df.iloc[1:]
 
-        # 🔥 elimina righe totalmente vuote
-        df = df.dropna(how="all")
+            # 🔥 elimina righe vuote
+            df = df.dropna(how="all")
 
-        # 🔥 pulizia colonne
-        df = df.loc[:, ~df.columns.str.contains("Unnamed", case=False)]
+            # 🔥 elimina colonne inutili
+            df = df.loc[:, ~df.columns.str.contains("Unnamed", case=False)]
 
-        df["source_file"] = file.name
+            df["source_file"] = file.name
 
-        df_list.append(df)
+            df_list.append(df)
 
-    except Exception as e:
-        st.error(f"Errore file {file.name}: {e}")
+        except Exception as e:
+            st.error(f"Errore file {file.name}: {e}")
 
     if not df_list:
-        st.error("❌ Nessun file valido (controlla nome foglio o struttura file)")
+        st.error("❌ Nessun file valido")
         st.stop()
 
     full_df = pd.concat(df_list, ignore_index=True)
@@ -100,7 +91,6 @@ if uploaded_files:
     st.success(f"✅ Caricati {len(uploaded_files)} file")
     st.write(f"Totale righe utili: {len(full_df)}")
 
-    # DEBUG FACOLTATIVO
     with st.expander("🔧 Colonne rilevate"):
         st.write(list(full_df.columns))
 
@@ -122,57 +112,12 @@ if uploaded_files:
 
     filtered_df = full_df.copy()
 
-    # -----------------------------
-    # FILTRO MRBTS
-    # -----------------------------
-    # Sostituisci qui il nome reale colonna MRBTS se lo conosci
-    POSSIBLE_MRBTS_COLS = ["MRBTS", "MRBTS_ID", "MeContext", "ManagedElement"]
-
-    if search_mrbts:
-        possible_cols = columns_present(filtered_df, POSSIBLE_MRBTS_COLS)
-
-        if possible_cols:
-            mask = False
-            for col in possible_cols:
-                mask = mask | filtered_df[col].astype(str).str.contains(search_mrbts, case=False, na=False)
-            filtered_df = filtered_df[mask]
-        else:
-            # fallback su ricerca globale
-            filtered_df = filtered_df[
-                filtered_df.astype(str).apply(
-                    lambda row: row.str.contains(search_mrbts, case=False).any(),
-                    axis=1
-                )
-            ]
-
-    # -----------------------------
-    # FILTRO SITO
-    # -----------------------------
-    POSSIBLE_SITO_COLS = ["SITO", "Site", "SiteName", "NOME_LOCALITA", "NOME"]
-
-    if search_sito:
-        possible_cols = columns_present(filtered_df, POSSIBLE_SITO_COLS)
-
-        if possible_cols:
-            mask = False
-            for col in possible_cols:
-                mask = mask | filtered_df[col].astype(str).str.contains(search_sito, case=False, na=False)
-            filtered_df = filtered_df[mask]
-        else:
-            filtered_df = filtered_df[
-                filtered_df.astype(str).apply(
-                    lambda row: row.str.contains(search_sito, case=False).any(),
-                    axis=1
-                )
-            ]
-
-    # -----------------------------
-    # FILTRO TESTO LIBERO
-    # -----------------------------
-    if search_free:
+    # 🔹 ricerca semplice globale
+    if search_mrbts or search_sito or search_free:
+        search_text = f"{search_mrbts} {search_sito} {search_free}"
         filtered_df = filtered_df[
             filtered_df.astype(str).apply(
-                lambda row: row.str.contains(search_free, case=False).any(),
+                lambda row: row.str.contains(search_text, case=False).any(),
                 axis=1
             )
         ]
@@ -184,25 +129,24 @@ if uploaded_files:
         st.stop()
 
     # =========================================================
-    # LISTA RISULTATI
+    # RISULTATI
     # =========================================================
     st.subheader("📋 Risultati")
 
-    # colonne sintetiche da adattare
-    preview_cols_candidates = [
-        "MRBTS", "MRBTS_ID", "MeContext",
-        "SITO", "Site", "SiteName", "NOME_LOCALITA", "NOME",
+    preview_cols = [
+        "SiteMainPar - eNB id",
+        "SiteMainPar - eNB Name",
+        "SiteMainPar - BTS Name",
         "source_file"
     ]
 
-    preview_cols = columns_present(filtered_df, preview_cols_candidates)
+    valid_preview = [c for c in preview_cols if c in filtered_df.columns]
 
-    if preview_cols:
-        st.dataframe(filtered_df[preview_cols], use_container_width=True)
+    if valid_preview:
+        st.dataframe(filtered_df[valid_preview], use_container_width=True)
     else:
-        st.dataframe(filtered_df, use_container_width=True)
+        st.dataframe(filtered_df)
 
-    # selezione record
     selected_index = st.selectbox(
         "Seleziona la riga da dettagliare",
         options=filtered_df.index.tolist(),
@@ -214,60 +158,41 @@ if uploaded_files:
     st.divider()
 
     # =========================================================
-    # SEZIONI DETTAGLIO
+    # MAPPING SEZIONI
     # =========================================================
 
-    # -----------------------------
-    # ANAGRAFICA
-    # -----------------------------
-    anagrafica_cols = [
-        "MRBTS", "MRBTS_ID", "MeContext",
-        "SITO", "Site", "SiteName",
-        "NOME", "Name", "NOME_LOCALITA",
+    ANAGRAFICA = [
+        "SiteMainPar - eNB id",
+        "SiteMainPar - eNB Name",
+        "SiteMainPar - BTS Name",
         "source_file"
     ]
 
-    # -----------------------------
-    # DETTAGLIO 4G
-    # -----------------------------
-    dettaglio_4g_cols = [
-        "LTE", "4G", "LTE_IP", "LTE_PORT", "LTE_VLAN",
-        "45G_Traffic", "InterfaceIPv4", "AddressIPv4"
+    DET_4G = [
+        "Addressing IPNO - 4G logical Control Plane IP@",
+        "Addressing IPNO - 4G logical User Plane IP@",
+        "Addressing IPNO - SRAN Management Plane IP@"
     ]
 
-    # -----------------------------
-    # DETTAGLIO 5G
-    # -----------------------------
-    dettaglio_5g_cols = [
-        "NR", "5G", "5G_IP", "5G_PORT", "5G_VLAN",
-        "Node_Internal_F1", "NRDU", "NRCUCP", "4G5G_Traffic"
+    DET_5G = [
+        "Addressing IPNO - 5G logical Control Plane IP@",
+        "Addressing IPNO - 5G logical User Plane IP@"
     ]
 
-    # -----------------------------
-    # DETTAGLIO 2G
-    # -----------------------------
-    dettaglio_2g_cols = [
-        "GSM", "2G", "2G_IP", "2G_PORT", "2G_VLAN"
+    DET_2G = [
+        "2G VLAN#4 U/C-plane (IVIF) - 2G VLAN id#4 for U/C-Plane",
+        "2G VLAN#5 omusig  (IVIF) - 2G VLAN id#5 for omusig-Plane"
     ]
 
-    # -----------------------------
-    # DETTAGLIO SINCRONISMO
-    # -----------------------------
-    dettaglio_sync_cols = [
-        "Sync", "Sincronismo", "Synchronization", "NTP", "PTP", "Clock"
+    DET_SYNC = [
+        "Features - Sync Type",
+        "INTP - TP5000 IP address"
     ]
 
-    # -----------------------------
-    # DETTAGLIO IPSEC
-    # -----------------------------
-    dettaglio_ipsec_cols = [
-        "IPSec", "IPSEC", "Tunnel", "Tunnel_IPSec", "Security", "VPN"
+    DET_IPSEC = [
+        "IPSECC - SEC-Gw IP@",
+        "IPSECC - CA Server IP address"
     ]
 
-    # Render sezioni
-    render_section("🧾 Anagrafica", selected_row, anagrafica_cols)
-    render_section("📡 Dettaglio 4G", selected_row, dettaglio_4g_cols)
-    render_section("🛰️ Dettaglio 5G", selected_row, dettaglio_5g_cols)
-    render_section("📞 Dettaglio 2G", selected_row, dettaglio_2g_cols)
-    render_section("⏱️ Dettaglio Sincronismo", selected_row, dettaglio_sync_cols)
-    render_section("🔐 Dettaglio IPSec", selected_row, dettaglio_ipsec_cols)
+    # =========================================================
+    # RENDER UI
