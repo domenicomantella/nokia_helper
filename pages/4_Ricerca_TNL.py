@@ -83,7 +83,7 @@ def clean_numeric_string(value):
 @st.cache_data
 def load_bsc_mapping():
     try:
-        df_bsc = pd.read_csv(mapping_bsc.csv, dtype=str)
+        df_bsc = pd.read_csv(BSC_MAPPING_FILE, dtype=str)
 
         df_bsc["BSC Id"] = df_bsc["BSC Id"].apply(clean_numeric_string)
         df_bsc["BSC Name"] = df_bsc["BSC Name"].fillna("").astype(str).str.strip()
