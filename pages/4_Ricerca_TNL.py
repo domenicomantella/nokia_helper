@@ -29,13 +29,17 @@ uploaded_files = st.file_uploader(
 # LABEL MAP (nomi belli in UI)
 # =========================================================
 LABEL_MAP = {
-    # Anagrafica
+    # -------------------------
+    # ANAGRAFICA
+    # -------------------------
     "SiteMainPar - eNB id": "MRBTS Id",
     "SiteMainPar - BTS Name": "Sito",
     "SiteMainPar - eNB Name": "Nome",
     "source_file": "File sorgente",
 
+    # -------------------------
     # 4G
+    # -------------------------
     "VLAN#2 M-plane (IVIF) - SRAN VLAN network interface #2 IP@": "Indirizzo IP O&M",
     "IPRT - DCN Gateway 2": "Indirizzo IP Def GTW",
     "VLAN#2 M-plane (IVIF) - SRAN VLAN id#2 for M-Plane": "VLAN O&M",
@@ -43,19 +47,28 @@ LABEL_MAP = {
     "IPRT - 4G U/C Gateway 1": "Indirizzo IP Def GTW 45G",
     "4G VLAN#1 U/C/S-plane (IVIF) - 4G VLAN id#1 for U/C/S-Plane": "VLAN UserPlane 45G",
 
-    # 5G (placeholder base)
-    "Addressing IPNO - 5G logical Control Plane IP@": "Indirizzo IP Control Plane 5G",
-    "Addressing IPNO - 5G logical User Plane IP@": "Indirizzo IP User Plane 5G",
+    # -------------------------
+    # 5G
+    # -------------------------
+    "5G VLAN#1 U/C/S-plane (IVIF) - 5G VLAN network interface #1 IP@": "Indirizzo IP 45G",
+    "IPRT - 5G U/C Gateway 1": "Indirizzo IP Def GTW 45G",
+    "5G VLAN#1 U/C/S-plane (IVIF) - 5G VLAN id#1 for U/C/S-Plane": "VLAN UserPlane 45G",
 
+    # -------------------------
     # 2G
+    # -------------------------
     "2G VLAN#4 U/C-plane (IVIF) - 2G VLAN id#4 for U/C-Plane": "VLAN 2G U/C",
     "2G VLAN#5 omusig  (IVIF) - 2G VLAN id#5 for omusig-Plane": "VLAN 2G omusig",
 
-    # Sincronismo
+    # -------------------------
+    # SINCRONISMO
+    # -------------------------
     "Features - Sync Type": "Tipo sincronismo",
     "INTP - TP5000 IP address": "TP5000 IP address",
 
-    # IPSec
+    # -------------------------
+    # IPSEC
+    # -------------------------
     "IPSECC - SEC-Gw IP@": "SEC-Gw IP",
     "IPSECC - CA Server IP address": "CA Server IP",
     "IPSECC - CA Name": "CA Name"
@@ -86,7 +99,6 @@ def render_section(title, df, cols):
 
         st.dataframe(out, use_container_width=True, hide_index=True)
 
-
 # =========================================================
 # CARICAMENTO DATI
 # =========================================================
@@ -104,7 +116,7 @@ if uploaded_files:
                 for c in df.columns
             ]
 
-            # Rimuove la riga descrittiva subito sotto l'header
+            # Rimuove la prima riga descrittiva sotto l'intestazione
             df = df.iloc[1:]
 
             # Elimina righe completamente vuote
@@ -113,6 +125,7 @@ if uploaded_files:
             # Elimina colonne unnamed
             df = df.loc[:, ~df.columns.str.contains("Unnamed", case=False)]
 
+            # Aggiunge file sorgente
             df["source_file"] = file.name
 
             df_list.append(df)
@@ -130,8 +143,9 @@ if uploaded_files:
     full_df = full_df.astype(str)
 
     # =========================================================
-    # FIX .0 SOLO SU INTERI LETTI COME FLOAT
-    # (es: 123456.0 -> 123456, ma NON tocca IP tipo 10.0.0.1)
+    # FIX .0 SOLO SU VALORI INTERI LETTI COME FLOAT
+    # Es: 123456.0 -> 123456
+    # NON tocca IP tipo 10.0.0.1
     # =========================================================
     full_df = full_df.replace(r"^(-?\d+)\.0$", r"\1", regex=True)
 
@@ -161,17 +175,26 @@ if uploaded_files:
 
     if search_mrbts:
         filtered_df = filtered_df[
-            filtered_df.apply(lambda r: r.str.contains(search_mrbts, case=False, regex=False).any(), axis=1)
+            filtered_df.apply(
+                lambda r: r.str.contains(search_mrbts, case=False, regex=False).any(),
+                axis=1
+            )
         ]
 
     if search_sito:
         filtered_df = filtered_df[
-            filtered_df.apply(lambda r: r.str.contains(search_sito, case=False, regex=False).any(), axis=1)
+            filtered_df.apply(
+                lambda r: r.str.contains(search_sito, case=False, regex=False).any(),
+                axis=1
+            )
         ]
 
     if search_free:
         filtered_df = filtered_df[
-            filtered_df.apply(lambda r: r.str.contains(search_free, case=False, regex=False).any(), axis=1)
+            filtered_df.apply(
+                lambda r: r.str.contains(search_free, case=False, regex=False).any(),
+                axis=1
+            )
         ]
 
     st.write(f"Risultati trovati: {len(filtered_df)}")
@@ -213,6 +236,9 @@ if uploaded_files:
     # SEZIONI
     # =========================================================
 
+    # -------------------------
+    # ANAGRAFICA
+    # -------------------------
     ANAGRAFICA = [
         "SiteMainPar - eNB id",
         "SiteMainPar - BTS Name",
@@ -220,6 +246,9 @@ if uploaded_files:
         "source_file"
     ]
 
+    # -------------------------
+    # 4G
+    # -------------------------
     DET_4G = [
         "VLAN#2 M-plane (IVIF) - SRAN VLAN network interface #2 IP@",
         "IPRT - DCN Gateway 2",
@@ -229,21 +258,34 @@ if uploaded_files:
         "4G VLAN#1 U/C/S-plane (IVIF) - 4G VLAN id#1 for U/C/S-Plane"
     ]
 
+    # -------------------------
+    # 5G
+    # -------------------------
     DET_5G = [
-        "Addressing IPNO - 5G logical Control Plane IP@",
-        "Addressing IPNO - 5G logical User Plane IP@"
+        "5G VLAN#1 U/C/S-plane (IVIF) - 5G VLAN network interface #1 IP@",
+        "IPRT - 5G U/C Gateway 1",
+        "5G VLAN#1 U/C/S-plane (IVIF) - 5G VLAN id#1 for U/C/S-Plane"
     ]
 
+    # -------------------------
+    # 2G
+    # -------------------------
     DET_2G = [
         "2G VLAN#4 U/C-plane (IVIF) - 2G VLAN id#4 for U/C-Plane",
         "2G VLAN#5 omusig  (IVIF) - 2G VLAN id#5 for omusig-Plane"
     ]
 
+    # -------------------------
+    # SINCRONISMO
+    # -------------------------
     DET_SYNC = [
         "Features - Sync Type",
         "INTP - TP5000 IP address"
     ]
 
+    # -------------------------
+    # IPSEC
+    # -------------------------
     DET_IPSEC = [
         "IPSECC - SEC-Gw IP@",
         "IPSECC - CA Server IP address",
