@@ -66,20 +66,30 @@ if uploaded_files:
     df_list = []
 
     for file in uploaded_files:
-        try:
-            df = pd.read_excel(file, sheet_name=SHEET_NAME)
+    try:
+        df = pd.read_excel(file, sheet_name=SHEET_NAME, header=[0, 1])
 
-            # elimina righe completamente vuote
-            df = df.dropna(how="all")
+        # 🔥 appiattisce colonne
+        df.columns = [
+            f"{str(col[0]).strip()} - {str(col[1]).strip()}"
+            for col in df.columns
+        ]
 
-            # elimina colonne unnamed
-            df = df.loc[:, ~df.columns.astype(str).str.contains("^Unnamed", case=False)]
+        # 🔥 RIMUOVE righe descrittive (prime 1-2 righe dopo header)
+        df = df.iloc[1:]   # ← questo è CRUCIALE nel tuo caso
 
-            df["source_file"] = file.name
-            df_list.append(df)
+        # 🔥 elimina righe totalmente vuote
+        df = df.dropna(how="all")
 
-        except Exception:
-            continue
+        # 🔥 pulizia colonne
+        df = df.loc[:, ~df.columns.str.contains("Unnamed", case=False)]
+
+        df["source_file"] = file.name
+
+        df_list.append(df)
+
+    except Exception as e:
+        st.error(f"Errore file {file.name}: {e}")
 
     if not df_list:
         st.error("❌ Nessun file valido (controlla nome foglio o struttura file)")
