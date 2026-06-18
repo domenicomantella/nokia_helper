@@ -26,6 +26,42 @@ uploaded_files = st.file_uploader(
 )
 
 # =========================================================
+# LABEL MAP (nomi belli in UI)
+# =========================================================
+LABEL_MAP = {
+    # Anagrafica
+    "SiteMainPar - eNB id": "MRBTS Id",
+    "SiteMainPar - BTS Name": "Sito",
+    "SiteMainPar - eNB Name": "Nome",
+    "source_file": "File sorgente",
+
+    # 4G
+    "VLAN#2 M-plane (IVIF) - SRAN VLAN network interface #2 IP@": "Indirizzo IP O&M",
+    "IPRT - DCN Gateway 2": "Indirizzo IP Def GTW",
+    "VLAN#2 M-plane (IVIF) - SRAN VLAN id#2 for M-Plane": "VLAN O&M",
+    "4G VLAN#1 U/C/S-plane (IVIF) - 4G VLAN network interface #1 IP@": "Indirizzo IP 45G",
+    "IPRT - 4G U/C Gateway 1": "Indirizzo IP Def GTW 45G",
+    "4G VLAN#1 U/C/S-plane (IVIF) - 4G VLAN id#1 for U/C/S-Plane": "VLAN UserPlane 45G",
+
+    # 5G (placeholder base)
+    "Addressing IPNO - 5G logical Control Plane IP@": "Indirizzo IP Control Plane 5G",
+    "Addressing IPNO - 5G logical User Plane IP@": "Indirizzo IP User Plane 5G",
+
+    # 2G
+    "2G VLAN#4 U/C-plane (IVIF) - 2G VLAN id#4 for U/C-Plane": "VLAN 2G U/C",
+    "2G VLAN#5 omusig  (IVIF) - 2G VLAN id#5 for omusig-Plane": "VLAN 2G omusig",
+
+    # Sincronismo
+    "Features - Sync Type": "Tipo sincronismo",
+    "INTP - TP5000 IP address": "TP5000 IP address",
+
+    # IPSec
+    "IPSECC - SEC-Gw IP@": "SEC-Gw IP",
+    "IPSECC - CA Server IP address": "CA Server IP",
+    "IPSECC - CA Name": "CA Name"
+}
+
+# =========================================================
 # FUNZIONI
 # =========================================================
 def section_has_data(df, cols):
@@ -33,7 +69,7 @@ def section_has_data(df, cols):
     if not valid:
         return False
 
-    temp = df[valid].fillna("").astype(str)
+    temp = df[valid].fillna("").astype(str).apply(lambda col: col.str.strip())
     return (temp != "").any().any()
 
 
@@ -42,9 +78,12 @@ def render_section(title, df, cols):
 
     if section_has_data(df, cols):
         st.subheader(title)
+
         out = df[valid].T.reset_index()
         out.columns = ["Campo", "Valore"]
-        out["Campo"] = out["Campo"].str.split(" - ").str[-1]
+
+        out["Campo"] = out["Campo"].apply(lambda x: LABEL_MAP.get(x, x))
+
         st.dataframe(out, use_container_width=True, hide_index=True)
 
 
@@ -59,17 +98,19 @@ if uploaded_files:
         try:
             df = pd.read_excel(file, sheet_name=SHEET_NAME, header=[0, 1])
 
-            # flatten colonne
+            # Flatten colonne multiheader
             df.columns = [
                 f"{str(c[0]).strip()} - {str(c[1]).strip()}"
                 for c in df.columns
             ]
 
-            # rimuove riga descrittiva
+            # Rimuove la riga descrittiva subito sotto l'header
             df = df.iloc[1:]
 
-            # pulizia
+            # Elimina righe completamente vuote
             df = df.dropna(how="all")
+
+            # Elimina colonne unnamed
             df = df.loc[:, ~df.columns.str.contains("Unnamed", case=False)]
 
             df["source_file"] = file.name
@@ -85,13 +126,18 @@ if uploaded_files:
 
     full_df = pd.concat(df_list, ignore_index=True)
 
-    # 🔥 evita problemi di tipi
+    # Converte tutto in stringa
     full_df = full_df.astype(str)
+
+    # =========================================================
+    # FIX .0 SOLO SU INTERI LETTI COME FLOAT
+    # (es: 123456.0 -> 123456, ma NON tocca IP tipo 10.0.0.1)
+    # =========================================================
+    full_df = full_df.replace(r"^(-?\d+)\.0$", r"\1", regex=True)
 
     st.success(f"✅ File caricati: {len(uploaded_files)}")
     st.write(f"Totale righe: {len(full_df)}")
 
-    # DEBUG
     with st.expander("🔧 Colonne rilevate"):
         st.write(list(full_df.columns))
 
@@ -115,17 +161,17 @@ if uploaded_files:
 
     if search_mrbts:
         filtered_df = filtered_df[
-            filtered_df.apply(lambda r: r.str.contains(search_mrbts, case=False).any(), axis=1)
+            filtered_df.apply(lambda r: r.str.contains(search_mrbts, case=False, regex=False).any(), axis=1)
         ]
 
     if search_sito:
         filtered_df = filtered_df[
-            filtered_df.apply(lambda r: r.str.contains(search_sito, case=False).any(), axis=1)
+            filtered_df.apply(lambda r: r.str.contains(search_sito, case=False, regex=False).any(), axis=1)
         ]
 
     if search_free:
         filtered_df = filtered_df[
-            filtered_df.apply(lambda r: r.str.contains(search_free, case=False).any(), axis=1)
+            filtered_df.apply(lambda r: r.str.contains(search_free, case=False, regex=False).any(), axis=1)
         ]
 
     st.write(f"Risultati trovati: {len(filtered_df)}")
@@ -141,14 +187,17 @@ if uploaded_files:
 
     preview_cols = [
         "SiteMainPar - eNB id",
-        "SiteMainPar - eNB Name",
         "SiteMainPar - BTS Name",
+        "SiteMainPar - eNB Name",
         "source_file"
     ]
 
     valid_preview = [c for c in preview_cols if c in filtered_df.columns]
 
-    st.dataframe(filtered_df[valid_preview] if valid_preview else filtered_df)
+    st.dataframe(
+        filtered_df[valid_preview] if valid_preview else filtered_df,
+        use_container_width=True
+    )
 
     selected_index = st.selectbox(
         "Seleziona riga",
@@ -163,16 +212,21 @@ if uploaded_files:
     # =========================================================
     # SEZIONI
     # =========================================================
+
     ANAGRAFICA = [
         "SiteMainPar - eNB id",
-        "SiteMainPar - eNB Name",
         "SiteMainPar - BTS Name",
+        "SiteMainPar - eNB Name",
         "source_file"
     ]
 
     DET_4G = [
-        "Addressing IPNO - 4G logical Control Plane IP@",
-        "Addressing IPNO - 4G logical User Plane IP@"
+        "VLAN#2 M-plane (IVIF) - SRAN VLAN network interface #2 IP@",
+        "IPRT - DCN Gateway 2",
+        "VLAN#2 M-plane (IVIF) - SRAN VLAN id#2 for M-Plane",
+        "4G VLAN#1 U/C/S-plane (IVIF) - 4G VLAN network interface #1 IP@",
+        "IPRT - 4G U/C Gateway 1",
+        "4G VLAN#1 U/C/S-plane (IVIF) - 4G VLAN id#1 for U/C/S-Plane"
     ]
 
     DET_5G = [
@@ -181,7 +235,8 @@ if uploaded_files:
     ]
 
     DET_2G = [
-        "2G VLAN#4 U/C-plane (IVIF) - 2G VLAN id#4 for U/C-Plane"
+        "2G VLAN#4 U/C-plane (IVIF) - 2G VLAN id#4 for U/C-Plane",
+        "2G VLAN#5 omusig  (IVIF) - 2G VLAN id#5 for omusig-Plane"
     ]
 
     DET_SYNC = [
@@ -190,7 +245,9 @@ if uploaded_files:
     ]
 
     DET_IPSEC = [
-        "IPSECC - SEC-Gw IP@"
+        "IPSECC - SEC-Gw IP@",
+        "IPSECC - CA Server IP address",
+        "IPSECC - CA Name"
     ]
 
     # =========================================================
