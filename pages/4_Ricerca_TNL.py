@@ -39,6 +39,10 @@ if uploaded_files:
     for file in uploaded_files:
         try:
             df = pd.read_excel(file, sheet_name=SHEET_NAME)
+            
+            # 🔥 PULIZIA DATI
+            df = df.dropna(how="all")   # elimina righe completamente vuote
+
             df["source_file"] = file.name
             df_list.append(df)
         except:
