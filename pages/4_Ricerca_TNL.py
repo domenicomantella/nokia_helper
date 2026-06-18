@@ -7,6 +7,7 @@ st.title("📊 Ricerca TNL")
 # CONFIG
 # =========================================================
 SHEET_NAME = "TNL_TI_SRAN"
+BSC_MAPPING_FILE = "data/mapping_bsc.csv"
 
 st.warning("""
 📌 ISTRUZIONI:
@@ -29,7 +30,6 @@ uploaded_files = st.file_uploader(
 # LABEL MAP
 # =========================================================
 LABEL_MAP = {
-
     # ANAGRAFICA
     "SiteMainPar - eNB id": "MRBTS Id",
     "SiteMainPar - BTS Name": "Sito",
@@ -49,6 +49,11 @@ LABEL_MAP = {
     "IPRT - 5G U/C Gateway 1": "Indirizzo IP Def GTW 45G",
     "5G VLAN#1 U/C/S-plane (IVIF) - 5G VLAN id#1 for U/C/S-Plane": "VLAN UserPlane 45G",
 
+    # 2G
+    "BSC": "BSC",
+    "2G VLAN#5 omusig  (IVIF) - 2G VLAN network interface #5 IP@": "OMUSIG",
+    "2G VLAN#5 omusig  (IVIF) - 2G VLAN id#5 for omusig-Plane": "Vlan GSM",
+
     # SINCRONISMO
     "Features - Sync Type": "Tipo Sincronismo",
     "TOP - ToP master IP@": "Indirizzo IP Time Server",
@@ -56,22 +61,56 @@ LABEL_MAP = {
     # IPSEC
     "Addressing IPNO - 4G logical Control Plane IP@": "Indirizzo IPSec 4G",
     "Addressing IPNO - 5G logical Control Plane IP@": "Indirizzo IPSec 5G",
-    "IPSECC - SEC-Gw IP@": "TEP (SecGTW)",
-
-    # 2G (placeholder)
-    "2G VLAN#4 U/C-plane (IVIF) - 2G VLAN id#4 for U/C-Plane": "VLAN 2G U/C",
-    "2G VLAN#5 omusig  (IVIF) - 2G VLAN id#5 for omusig-Plane": "VLAN 2G omusig"
+    "IPSECC - SEC-Gw IP@": "TEP (SecGTW)"
 }
 
 # =========================================================
 # FUNZIONI
 # =========================================================
+def clean_numeric_string(value):
+    value = str(value).strip()
+
+    if value.lower() in ["nan", "none"]:
+        return ""
+
+    # elimina .0 solo dagli interi letti come float
+    if value.endswith(".0") and value[:-2].replace("-", "").isdigit():
+        return value[:-2]
+
+    return value
+
+
+@st.cache_data
+def load_bsc_mapping():
+    try:
+        df_bsc = pd.read_csv(BSC_MAPPING_FILE, dtype=str)
+
+        df_bsc["BSC Id"] = df_bsc["BSC Id"].apply(clean_numeric_string)
+        df_bsc["BSC Name"] = df_bsc["BSC Name"].fillna("").astype(str).str.strip()
+
+        return dict(zip(df_bsc["BSC Id"], df_bsc["BSC Name"]))
+
+    except Exception as e:
+        st.error(f"Errore lettura mapping BSC: {e}")
+        return {}
+
+
+def find_first_existing_column(df, possible_columns):
+    for col in possible_columns:
+        if col in df.columns:
+            return col
+    return None
+
+
 def section_has_data(df, cols):
     valid = [c for c in cols if c in df.columns]
+
     if not valid:
         return False
 
     temp = df[valid].fillna("").astype(str).apply(lambda col: col.str.strip())
+    temp = temp.replace(["nan", "NaN", "None"], "")
+
     return (temp != "").any().any()
 
 
@@ -85,8 +124,27 @@ def render_section(title, df, cols):
         out.columns = ["Campo", "Valore"]
 
         out["Campo"] = out["Campo"].apply(lambda x: LABEL_MAP.get(x, x))
+        out["Valore"] = out["Valore"].fillna("").astype(str).replace(["nan", "NaN", "None"], "")
 
         st.dataframe(out, use_container_width=True, hide_index=True)
+
+
+def render_section_always(title, df, cols):
+    valid = [c for c in cols if c in df.columns]
+
+    st.subheader(title)
+
+    if valid:
+        out = df[valid].T.reset_index()
+        out.columns = ["Campo", "Valore"]
+
+        out["Campo"] = out["Campo"].apply(lambda x: LABEL_MAP.get(x, x))
+        out["Valore"] = out["Valore"].fillna("").astype(str).replace(["nan", "NaN", "None"], "")
+
+        st.dataframe(out, use_container_width=True, hide_index=True)
+    else:
+        st.info("Nessun campo disponibile per questa sezione.")
+
 
 # =========================================================
 # CARICAMENTO DATI
@@ -99,19 +157,22 @@ if uploaded_files:
         try:
             df = pd.read_excel(file, sheet_name=SHEET_NAME, header=[0, 1])
 
-            # Flatten header
+            # Flatten Header multi-riga
             df.columns = [
                 f"{str(c[0]).strip()} - {str(c[1]).strip()}"
                 for c in df.columns
             ]
 
-            # Rimuove riga descrittiva
+            # Rimuove la prima riga descrittiva sotto l'intestazione
             df = df.iloc[1:]
 
-            # Pulizia
+            # Elimina righe completamente vuote
             df = df.dropna(how="all")
+
+            # Elimina colonne Unnamed
             df = df.loc[:, ~df.columns.str.contains("Unnamed", case=False)]
 
+            # Aggiunge file sorgente
             df["source_file"] = file.name
 
             df_list.append(df)
@@ -125,11 +186,33 @@ if uploaded_files:
 
     full_df = pd.concat(df_list, ignore_index=True)
 
-    # Converti a stringa
+    # Converte tutto in stringa
     full_df = full_df.astype(str)
 
-    # FIX .0 solo su interi
+    # Pulisce nan testuali
+    full_df = full_df.replace(["nan", "NaN", "None"], "")
+
+    # Fix .0 solo su interi letti come float
     full_df = full_df.replace(r"^(-?\d+)\.0$", r"\1", regex=True)
+
+    # =========================================================
+    # MAPPING BSC DA CSV
+    # =========================================================
+    BSC_MAP = load_bsc_mapping()
+
+    possible_bsc_cols = [
+        "RNC&amp;BSC - BSCid",
+        "RNC&BSC - BSCid"
+    ]
+
+    bsc_col = find_first_existing_column(full_df, possible_bsc_cols)
+
+    if bsc_col:
+        full_df["BSC"] = full_df[bsc_col].apply(
+            lambda x: BSC_MAP.get(clean_numeric_string(x), clean_numeric_string(x))
+        )
+    else:
+        full_df["BSC"] = ""
 
     st.success(f"✅ File caricati: {len(uploaded_files)}")
     st.write(f"Totale righe: {len(full_df)}")
@@ -157,17 +240,26 @@ if uploaded_files:
 
     if search_mrbts:
         filtered_df = filtered_df[
-            filtered_df.apply(lambda r: r.str.contains(search_mrbts, case=False, regex=False).any(), axis=1)
+            filtered_df.apply(
+                lambda r: r.str.contains(search_mrbts, case=False, regex=False).any(),
+                axis=1
+            )
         ]
 
     if search_sito:
         filtered_df = filtered_df[
-            filtered_df.apply(lambda r: r.str.contains(search_sito, case=False, regex=False).any(), axis=1)
+            filtered_df.apply(
+                lambda r: r.str.contains(search_sito, case=False, regex=False).any(),
+                axis=1
+            )
         ]
 
     if search_free:
         filtered_df = filtered_df[
-            filtered_df.apply(lambda r: r.str.contains(search_free, case=False, regex=False).any(), axis=1)
+            filtered_df.apply(
+                lambda r: r.str.contains(search_free, case=False, regex=False).any(),
+                axis=1
+            )
         ]
 
     st.write(f"Risultati trovati: {len(filtered_df)}")
@@ -190,7 +282,10 @@ if uploaded_files:
 
     valid_preview = [c for c in preview_cols if c in filtered_df.columns]
 
-    st.dataframe(filtered_df[valid_preview] if valid_preview else filtered_df)
+    st.dataframe(
+        filtered_df[valid_preview] if valid_preview else filtered_df,
+        use_container_width=True
+    )
 
     selected_index = st.selectbox(
         "Seleziona riga",
@@ -239,24 +334,22 @@ if uploaded_files:
     ]
 
     DET_2G = [
-        "2G VLAN#4 U/C-plane (IVIF) - 2G VLAN id#4 for U/C-Plane",
+        "BSC",
+        "2G VLAN#5 omusig  (IVIF) - 2G VLAN network interface #5 IP@",
         "2G VLAN#5 omusig  (IVIF) - 2G VLAN id#5 for omusig-Plane"
     ]
 
+    # =========================================================
     # OUTPUT
+    # =========================================================
     render_section("🧾 Anagrafica", row, ANAGRAFICA)
     render_section("📡 Dettaglio 4G", row, DET_4G)
     render_section("🛰️ Dettaglio 5G", row, DET_5G)
 
-    # Sync SEMPRE visibile
-    st.subheader("⏱️ Sincronismo")
-    valid_cols = [c for c in DET_SYNC if c in row.columns]
-
-    if valid_cols:
-        out = row[valid_cols].T.reset_index()
-        out.columns = ["Campo", "Valore"]
-        out["Campo"] = out["Campo"].apply(lambda x: LABEL_MAP.get(x, x))
-        st.dataframe(out, use_container_width=True, hide_index=True)
+    # Sincronismo sempre visibile
+    render_section_always("⏱️ Sincronismo", row, DET_SYNC)
 
     render_section("🔐 IPSec", row, DET_IPSEC)
-    render_section("📞 Dettaglio 2G", row, DET_2G)
+
+    # 2G sempre visibile, come richiesto ora che usiamo mapping BSC
+    render_section_always("📞 Dettaglio 2G", row, DET_2G)
