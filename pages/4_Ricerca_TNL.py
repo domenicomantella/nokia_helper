@@ -44,6 +44,7 @@ def render_section(title, df, cols):
         st.subheader(title)
         out = df[valid].T.reset_index()
         out.columns = ["Campo", "Valore"]
+        out["Campo"] = out["Campo"].str.split(" - ").str[-1]
         st.dataframe(out, use_container_width=True, hide_index=True)
 
 
