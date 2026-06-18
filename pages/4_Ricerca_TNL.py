@@ -26,7 +26,7 @@ uploaded_files = st.file_uploader(
 )
 
 # =========================================================
-# LABEL MAP (nomi belli in UI)
+# LABEL MAP (nomi leggibili in UI)
 # =========================================================
 LABEL_MAP = {
     # -------------------------
@@ -69,9 +69,9 @@ LABEL_MAP = {
     # -------------------------
     # IPSEC
     # -------------------------
-    "IPSECC - SEC-Gw IP@": "SEC-Gw IP",
-    "IPSECC - CA Server IP address": "CA Server IP",
-    "IPSECC - CA Name": "CA Name"
+    "Addressing IPNO - 4G logical Control Plane IP@": "Indirizzo IPSec 4G",
+    "Addressing IPNO - 5G logical Control Plane IP@": "Indirizzo IPSec 5G",
+    "IPSECC - SEC-Gw IP@": "TEP (SecGTW)"
 }
 
 # =========================================================
@@ -98,6 +98,7 @@ def render_section(title, df, cols):
         out["Campo"] = out["Campo"].apply(lambda x: LABEL_MAP.get(x, x))
 
         st.dataframe(out, use_container_width=True, hide_index=True)
+
 
 # =========================================================
 # CARICAMENTO DATI
@@ -143,8 +144,8 @@ if uploaded_files:
     full_df = full_df.astype(str)
 
     # =========================================================
-    # FIX .0 SOLO SU VALORI INTERI LETTI COME FLOAT
-    # Es: 123456.0 -> 123456
+    # FIX .0 SOLO SU INTERI LETTI COME FLOAT
+    # Esempio: 123456.0 -> 123456
     # NON tocca IP tipo 10.0.0.1
     # =========================================================
     full_df = full_df.replace(r"^(-?\d+)\.0$", r"\1", regex=True)
@@ -287,9 +288,9 @@ if uploaded_files:
     # IPSEC
     # -------------------------
     DET_IPSEC = [
-        "IPSECC - SEC-Gw IP@",
-        "IPSECC - CA Server IP address",
-        "IPSECC - CA Name"
+        "Addressing IPNO - 4G logical Control Plane IP@",
+        "Addressing IPNO - 5G logical Control Plane IP@",
+        "IPSECC - SEC-Gw IP@"
     ]
 
     # =========================================================
