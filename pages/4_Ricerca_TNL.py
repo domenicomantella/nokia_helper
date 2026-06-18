@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
+import re
 
 st.title("📊 Ricerca TNL")
 
@@ -68,17 +69,37 @@ LABEL_MAP = {
 # =========================================================
 # FUNZIONI
 # =========================================================
-def clean_numeric_string(value):
+def normalize_id(value):
+    """
+    Normalizza ID numerici letti da Excel/CSV:
+    - 416391.0 -> 416391
+    - ' 416391 ' -> 416391
+    - nan / None -> ''
+    """
+    value = str(value).strip()
+
+    if value.lower() in ["nan", "none", ""]:
+        return ""
+
+    # Se è un intero letto come float, rimuove .0
+    if re.fullmatch(r"-?\d+\.0", value):
+        value = value[:-2]
+
+    # Rimuove eventuali spazi residui
+    return value.strip()
+
+
+def clean_display_value(value):
+    """
+    Pulisce il valore da mostrare in UI.
+    """
     value = str(value).strip()
 
     if value.lower() in ["nan", "none"]:
         return ""
 
-    # elimina .0 solo dagli interi letti come float
-    # esempio: 123456.0 -> 123456
-    # non tocca IP tipo 10.0.0.1
-    if value.endswith(".0") and value[:-2].replace("-", "").isdigit():
-        return value[:-2]
+    if re.fullmatch(r"-?\d+\.0", value):
+        value = value[:-2]
 
     return value
 
@@ -90,7 +111,7 @@ def load_bsc_mapping():
             st.error(f"❌ File mapping BSC non trovato: {BSC_MAPPING_FILE}")
             return {}
 
-        # sep=None + engine="python" prova a riconoscere automaticamente "," oppure ";"
+        # sep=None prova a riconoscere automaticamente "," o ";"
         df_bsc = pd.read_csv(
             BSC_MAPPING_FILE,
             dtype=str,
@@ -98,23 +119,24 @@ def load_bsc_mapping():
             engine="python"
         )
 
-        # pulizia nomi colonne
+        # Pulisce i nomi colonna
         df_bsc.columns = df_bsc.columns.astype(str).str.strip()
-
-        # DEBUG utile: puoi lasciarlo durante i test
-        with st.expander("🔧 Debug mapping BSC"):
-            st.write("Colonne CSV rilevate:", df_bsc.columns.tolist())
 
         col_id = None
         col_name = None
 
         for col in df_bsc.columns:
-            normalized = col.lower().replace(" ", "").replace("_", "").replace("-", "")
+            normalized_col = (
+                col.lower()
+                .replace(" ", "")
+                .replace("_", "")
+                .replace("-", "")
+            )
 
-            if "bsc" in normalized and "id" in normalized:
+            if "bsc" in normalized_col and "id" in normalized_col:
                 col_id = col
 
-            if "bsc" in normalized and ("name" in normalized or "nome" in normalized):
+            if "bsc" in normalized_col and ("name" in normalized_col or "nome" in normalized_col):
                 col_name = col
 
         if not col_id or not col_name:
@@ -122,12 +144,19 @@ def load_bsc_mapping():
                 "❌ Colonne BSC non riconosciute nel CSV. "
                 "Servono una colonna tipo 'BSC Id' e una tipo 'BSC Name'."
             )
+
+            with st.expander("🔧 Debug colonne CSV"):
+                st.write(df_bsc.columns.tolist())
+
             return {}
 
-        df_bsc[col_id] = df_bsc[col_id].apply(clean_numeric_string)
+        # Normalizza chiavi e valori
+        df_bsc[col_id] = df_bsc[col_id].apply(normalize_id)
         df_bsc[col_name] = df_bsc[col_name].fillna("").astype(str).str.strip()
 
-        return dict(zip(df_bsc[col_id], df_bsc[col_name]))
+        bsc_map = dict(zip(df_bsc[col_id], df_bsc[col_name]))
+
+        return bsc_map
 
     except Exception as e:
         st.error(f"Errore lettura mapping BSC: {e}")
@@ -163,7 +192,7 @@ def render_section(title, df, cols):
         out.columns = ["Campo", "Valore"]
 
         out["Campo"] = out["Campo"].apply(lambda x: LABEL_MAP.get(x, x))
-        out["Valore"] = out["Valore"].fillna("").astype(str).replace(["nan", "NaN", "None"], "")
+        out["Valore"] = out["Valore"].apply(clean_display_value)
 
         st.dataframe(out, use_container_width=True, hide_index=True)
 
@@ -178,7 +207,7 @@ def render_section_always(title, df, cols):
         out.columns = ["Campo", "Valore"]
 
         out["Campo"] = out["Campo"].apply(lambda x: LABEL_MAP.get(x, x))
-        out["Valore"] = out["Valore"].fillna("").astype(str).replace(["nan", "NaN", "None"], "")
+        out["Valore"] = out["Valore"].apply(clean_display_value)
 
         st.dataframe(out, use_container_width=True, hide_index=True)
     else:
@@ -247,11 +276,23 @@ if uploaded_files:
     bsc_col = find_first_existing_column(full_df, possible_bsc_cols)
 
     if bsc_col:
-        full_df["BSC"] = full_df[bsc_col].apply(
-            lambda x: BSC_MAP.get(clean_numeric_string(x), clean_numeric_string(x))
+        full_df["_BSC_ID_NORMALIZED"] = full_df[bsc_col].apply(normalize_id)
+
+        full_df["BSC"] = full_df["_BSC_ID_NORMALIZED"].apply(
+            lambda x: BSC_MAP.get(x, x)
         )
+
+        # Debug utile per verificare casi tipo 416391 -> BMI70D
+        with st.expander("🔧 Debug BSC mapping"):
+            st.write("Colonna BSC trovata:", bsc_col)
+            st.write("Esempi ID Excel:", full_df["_BSC_ID_NORMALIZED"].drop_duplicates().head(20).tolist())
+            st.write("Esempi chiavi CSV:", list(BSC_MAP.keys())[:20])
     else:
         full_df["BSC"] = ""
+
+        with st.expander("🔧 Debug BSC mapping"):
+            st.warning("Colonna BSCid non trovata nel file Excel.")
+            st.write("Colonne disponibili:", list(full_df.columns))
 
     st.success(f"✅ File caricati: {len(uploaded_files)}")
     st.write(f"Totale righe: {len(full_df)}")
