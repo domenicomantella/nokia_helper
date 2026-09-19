@@ -126,20 +126,19 @@ def load_reference_from_path(path_string):
 
 
 def normalize_reference(df):
-    required = [
-        "Technology", "Abbreviated Name", "MO Class", "Parameter Category",
-        "Parent Structure", "Full Name", "Data Type", "Units", "Description",
-        "Range and step", "Default Value", "Default Value Notes", "Special Value",
-        "Special Value Notes", "Modification", "Required on Creation",
-        "Related Parameters", "Parameter Relationships", "Features", "Interfaces",
-        "Restriction Status",
+
+    df.columns = [
+        str(col).strip()
+        for col in df.columns
     ]
-    available = [column for column in required if column in df.columns]
-    result = df[available].copy()
-    result = result.dropna(how="all")
-    for column in result.columns:
-        result[column] = result[column].fillna("").astype(str).str.strip()
-    return result
+
+    df = df.loc[:, ~df.columns.duplicated()]
+
+    for col in df.columns:
+        if df[col].dtype == object:
+            df[col] = df[col].fillna("").astype(str).str.strip()
+
+    return df
 
 
 def base_parameter_name(parameter_path):
