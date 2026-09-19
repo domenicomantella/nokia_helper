@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 # =====================================================
 
 def remove_namespace(tag):
-    """Rimuove il namespace XML"""
+    """Rimuove namespace XML se presente"""
 
     if "}" in tag:
         return tag.split("}", 1)[1]
@@ -28,77 +28,22 @@ def get_managed_objects(root):
         attribs = dict(elem.attrib)
 
         params = {}
-        lists = {}
-
-        # ==========================================
-        # Analisi figli diretti del Managed Object
-        # ==========================================
 
         for child in elem:
 
-            child_tag = remove_namespace(child.tag)
-
-            # --------------------------------------
-            # PARAMETRI <p>
-            # --------------------------------------
-
-            if child_tag == "p":
+            if remove_namespace(child.tag) == "p":
 
                 param_name = child.attrib.get(
                     "name",
                     "UNKNOWN"
                 )
 
-                param_value = (
-                    child.text.strip()
-                    if child.text
-                    else ""
-                )
+                param_value = ""
+
+                if child.text:
+                    param_value = child.text.strip()
 
                 params[param_name] = param_value
-
-            # --------------------------------------
-            # LISTE <list>
-            # --------------------------------------
-
-            elif child_tag == "list":
-
-                list_name = child.attrib.get(
-                    "name",
-                    "UNKNOWN_LIST"
-                )
-
-                list_items = []
-
-                for item in child:
-
-                    if remove_namespace(item.tag) != "item":
-                        continue
-
-                    item_values = {}
-
-                    for subitem in item:
-
-                        if remove_namespace(subitem.tag) != "p":
-                            continue
-
-                        sub_name = subitem.attrib.get(
-                            "name",
-                            "UNKNOWN"
-                        )
-
-                        sub_value = (
-                            subitem.text.strip()
-                            if subitem.text
-                            else ""
-                        )
-
-                        item_values[sub_name] = sub_value
-
-                    if item_values:
-                        list_items.append(item_values)
-
-                lists[list_name] = list_items
 
         mos.append(
             {
@@ -108,7 +53,6 @@ def get_managed_objects(root):
                 "operation": attribs.get("operation", ""),
                 "attributes": attribs,
                 "parameters": params,
-                "lists": lists,
             }
         )
 
@@ -116,7 +60,7 @@ def get_managed_objects(root):
 
 
 # =====================================================
-# UI
+# Streamlit UI
 # =====================================================
 
 st.set_page_config(
@@ -126,14 +70,10 @@ st.set_page_config(
 )
 
 st.title("🔍 Nokia XML Inspector")
-
 st.caption(
-    "Visualizzazione classi, parametri e liste dei Managed Object Nokia"
+    "Visualizzazione classi, managed object e parametri XML"
 )
 
-# =====================================================
-# Upload XML
-# =====================================================
 
 xml_file = st.file_uploader(
     "Carica XML Nokia",
@@ -143,8 +83,9 @@ xml_file = st.file_uploader(
 if xml_file is None:
     st.stop()
 
+
 # =====================================================
-# Parsing XML
+# Parse XML
 # =====================================================
 
 try:
@@ -155,4 +96,158 @@ try:
 
     mos = get_managed_objects(root)
 
-except Exception as 
+except Exception as exc:
+
+    st.error(
+        f"Errore lettura XML: {exc}"
+    )
+
+    st.stop()
+
+
+# =====================================================
+# Dataframe
+# =====================================================
+
+df = pd.DataFrame(mos)
+
+if df.empty:
+
+    st.warning(
+        "Nessun managedObject trovato"
+    )
+
+    st.stop()
+
+
+# =====================================================
+# Metriche
+# =====================================================
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.metric(
+        "Managed Object",
+        len(df)
+    )
+
+with col2:
+    st.metric(
+        "Classi Distinte",
+        df["class"].nunique()
+    )
+
+
+# =====================================================
+# Tabs
+# =====================================================
+
+tab_classi, tab_dettaglio = st.tabs(
+    [
+        "Classi",
+        "Dettaglio"
+    ]
+)
+
+
+# =====================================================
+# TAB CLASSI
+# =====================================================
+
+with tab_classi:
+
+    st.subheader(
+        "Classi trovate"
+    )
+
+    summary = (
+        df.groupby("class")
+          .size()
+          .reset_index(name="Occorrenze")
+          .sort_values(
+              by="Occorrenze",
+              ascending=False
+          )
+    )
+
+    st.dataframe(
+        summary,
+        use_container_width=True,
+        hide_index=True
+    )
+
+
+# =====================================================
+# TAB DETTAGLIO
+# =====================================================
+
+with tab_dettaglio:
+
+    classes = sorted(
+        df["class"]
+          .dropna()
+          .unique()
+          .tolist()
+    )
+
+    selected_class = st.selectbox(
+        "Classe",
+        classes
+    )
+
+    class_df = df[
+        df["class"] == selected_class
+    ]
+
+    st.write(
+        f"Oggetti trovati: {len(class_df)}"
+    )
+
+    for idx, row in class_df.iterrows():
+
+        titolo = (
+            row["distName"]
+            if row["distName"]
+            else f"{selected_class}_{idx}"
+        )
+
+        with st.expander(titolo):
+
+            st.subheader(
+                "Attributi Managed Object"
+            )
+
+            st.json(
+                row["attributes"]
+            )
+
+            st.subheader(
+                "Parametri"
+            )
+
+            params = row["parameters"]
+
+            if len(params) == 0:
+
+                st.info(
+                    "Nessun parametro trovato"
+                )
+
+            else:
+
+                df_params = pd.DataFrame(
+                    [
+                        {
+                            "Parametro": k,
+                            "Valore": v
+                        }
+                        for k, v in params.items()
+                    ]
+                )
+
+                st.dataframe(
+                    df_params,
+                    use_container_width=True,
+                    hide_index=True
+                )
