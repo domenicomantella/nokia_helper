@@ -28,22 +28,72 @@ def get_managed_objects(root):
         attribs = dict(elem.attrib)
 
         params = {}
+        lists = {}
 
         for child in elem:
 
-            if remove_namespace(child.tag) == "p":
+            tag = remove_namespace(child.tag)
+
+            # ------------------------------------
+            # PARAMETRI <p>
+            # ------------------------------------
+
+            if tag == "p":
 
                 param_name = child.attrib.get(
                     "name",
                     "UNKNOWN"
                 )
 
-                param_value = ""
-
-                if child.text:
-                    param_value = child.text.strip()
+                param_value = (
+                    child.text.strip()
+                    if child.text
+                    else ""
+                )
 
                 params[param_name] = param_value
+
+            # ------------------------------------
+            # LISTE <list>
+            # ------------------------------------
+
+            elif tag == "list":
+
+                list_name = child.attrib.get(
+                    "name",
+                    "UNKNOWN_LIST"
+                )
+
+                list_items = []
+
+                for item in child:
+
+                    if remove_namespace(item.tag) != "item":
+                        continue
+
+                    item_values = {}
+
+                    for subitem in item:
+
+                        if remove_namespace(subitem.tag) == "p":
+
+                            sub_name = subitem.attrib.get(
+                                "name",
+                                "UNKNOWN"
+                            )
+
+                            sub_value = (
+                                subitem.text.strip()
+                                if subitem.text
+                                else ""
+                            )
+
+                            item_values[sub_name] = sub_value
+
+                    if item_values:
+                        list_items.append(item_values)
+
+                lists[list_name] = list_items
 
         mos.append(
             {
@@ -53,11 +103,11 @@ def get_managed_objects(root):
                 "operation": attribs.get("operation", ""),
                 "attributes": attribs,
                 "parameters": params,
+                "lists": lists
             }
         )
 
     return mos
-
 
 # =====================================================
 # Streamlit UI
@@ -176,7 +226,45 @@ with tab_classi:
         use_container_width=True,
         hide_index=True
     )
+# -------------------------------------
+# LISTE
+# -------------------------------------
 
+st.subheader(
+    "Liste"
+)
+
+lists_data = row["lists"]
+
+if not lists_data:
+
+    st.info(
+        "Nessuna lista trovata"
+    )
+
+else:
+
+    for list_name, items in lists_data.items():
+
+        st.markdown(
+            f"### {list_name}"
+        )
+
+        if not items:
+
+            st.write(
+                "Lista vuota"
+            )
+
+        else:
+
+            df_list = pd.DataFrame(items)
+
+            st.dataframe(
+                df_list,
+                use_container_width=True,
+                hide_index=True
+            )
 
 # =====================================================
 # TAB DETTAGLIO
