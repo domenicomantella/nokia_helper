@@ -28,8 +28,13 @@ def get_managed_objects(root):
         attribs = dict(elem.attrib)
 
         params = {}
+        list_count = 0
 
         for child in elem:
+            tag = remove_namespace(child.tag)
+            if tag == "list":
+                list_count += 1
+
 
             if remove_namespace(child.tag) == "p":
 
@@ -46,15 +51,16 @@ def get_managed_objects(root):
                 params[param_name] = param_value
 
         mos.append(
-            {
-                "class": attribs.get("class", ""),
-                "distName": attribs.get("distName", ""),
-                "version": attribs.get("version", ""),
-                "operation": attribs.get("operation", ""),
-                "attributes": attribs,
-                "parameters": params,
-            }
-        )
+    {
+        "class": attribs.get("class", ""),
+        "distName": attribs.get("distName", ""),
+        "version": attribs.get("version", ""),
+        "operation": attribs.get("operation", ""),
+        "attributes": attribs,
+        "parameters": params,
+        "list_count": list_count,
+    }
+)
 
     return mos
 
