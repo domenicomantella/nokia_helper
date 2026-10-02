@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import re
+import olefile
+import tempfile
 
 st.set_page_config(
     page_title="MSC Pool Builder V1",
@@ -80,6 +82,36 @@ msc_text = st.text_area(
 )
 
 if st.button("Analizza"):
+    try:
+
+    uploaded_file.seek(0)
+
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".xls"
+    ) as tmp:
+
+        tmp.write(
+            uploaded_file.read()
+        )
+
+        temp_name = tmp.name
+
+    ole = olefile.OleFileIO(
+        temp_name
+    )
+
+    st.subheader(
+        "Stream OLE"
+    )
+
+    st.write(
+        ole.listdir()
+    )
+
+except Exception as e:
+
+    st.exception(e)
 
     st.write("Lunghezza BSC:", len(bsc_text))
     st.write("Lunghezza MSC:", len(msc_text))
