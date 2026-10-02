@@ -1,3 +1,4 @@
+import html
 import re
 import streamlit as st
 
@@ -15,20 +16,19 @@ st.set_page_config(
 st.title("BSC Pool Script Builder")
 
 st.write(
-    "Carica due o più file TXT. Il primo file viene utilizzato come "
-    "struttura principale del file unificato."
+    "Unisce gli script TXT prodotti per destinazioni differenti "
+    "in un unico script BSC, mantenendo una sola copia delle "
+    "sezioni e dei commenti comuni."
 )
 
 
 # ============================================================
-# FUNZIONI DI LETTURA
+# LETTURA FILE
 # ============================================================
 
 def decode_uploaded_file(uploaded_file):
     """
-    Legge un file caricato da Streamlit provando le codifiche più comuni.
-
-    Restituisce il testo mantenendo le righe originali.
+    Legge il file caricato provando le codifiche più comuni.
     """
 
     raw_data = uploaded_file.getvalue()
@@ -46,12 +46,15 @@ def decode_uploaded_file(uploaded_file):
         except UnicodeDecodeError:
             continue
 
-    return raw_data.decode("utf-8", errors="replace")
+    return raw_data.decode(
+        "utf-8",
+        errors="replace",
+    )
 
 
 def normalize_newlines(text):
     """
-    Uniforma i caratteri di fine riga.
+    Uniforma i fine riga.
     """
 
     return (
@@ -62,12 +65,12 @@ def normalize_newlines(text):
 
 
 # ============================================================
-# RICONOSCIMENTO DELLE RIGHE
+# CLASSIFICAZIONE RIGHE
 # ============================================================
 
 def is_blank_line(line):
     """
-    Riconosce una riga vuota.
+    Restituisce True se la riga è vuota.
     """
 
     return not line.strip()
@@ -75,10 +78,7 @@ def is_blank_line(line):
 
 def is_comment_line(line):
     """
-    Riconosce i commenti dei file comando.
-
-    Sono considerate commenti tutte le righe che,
-    dopo eventuali spazi iniziali, iniziano con '!'.
+    Tutte le righe che iniziano con ! sono commenti.
     """
 
     return line.lstrip().startswith("!")
@@ -86,10 +86,13 @@ def is_comment_line(line):
 
 def is_section_title(line):
     """
-    Riconosce una riga titolo del tipo:
+    Riconosce i titoli funzionali delle sezioni.
+
+    Esempi:
 
     !*** MSC definition in Bsc ***!
     !*** Define NRI Value and Lenght ***!
+    !*** Create SCTP Association towards MSC Server => VPI20U ***!
     """
 
     stripped = line.strip()
@@ -103,83 +106,129 @@ def is_section_title(line):
     )
 
 
-def normalize_section_title(line):
+def normalize_line_for_comparison(line):
     """
-    Normalizza il titolo della sezione per confrontarlo
-    tra file diversi.
+    Normalizza una riga per confrontarla senza modificare
+    il testo effettivamente scritto nell'output.
     """
 
-    normalized = line.strip().lower()
-
-    normalized = re.sub(r"\s+", " ", normalized)
+    normalized = html.unescape(line)
     normalized = normalized.replace("\\", "")
+    normalized = normalized.strip().lower()
+    normalized = re.sub(r"\s+", " ", normalized)
 
     return normalized
 
 
+# ============================================================
+# CHIAVE COMUNE DELLA SEZIONE
+# ============================================================
+
+def get_section_key(title_line):
+    """
+    Genera una chiave logica comune per la sezione.
+
+    Il titolo originale viene mantenuto nell'output, ma la chiave
+    usata per confrontare i file elimina gli elementi variabili
+    legati alla destinazione.
+
+    Esempio:
+
+    Create SCTP Association ... => VPI20U
+    Create SCTP Association ... => VRM30U
+
+    diventano la stessa sezione.
+    """
+
+    normalized = normalize_line_for_comparison(
+        title_line
+    )
+
+    # Elimina i marcatori grafici iniziali e finali.
+    normalized = re.sub(
+        r"^!\s*\*+",
+        "",
+        normalized,
+    )
+
+    normalized = re.sub(
+        r"\*+\s*!?$",
+        "",
+        normalized,
+    )
+
+    normalized = normalized.strip()
+
+    # Tutto ciò che compare dopo => è considerato
+    # una destinazione variabile.
+    normalized = re.sub(
+        r"\s*=\s*>\s*[a-z0-9_.-]+.*$",
+        "",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+
+    # Gestisce anche il caso in cui nel testo sia rimasta
+    # l'entità HTML invece del simbolo >.
+    normalized = re.sub(
+        r"\s*=&gt;\s*[a-z0-9_.-]+.*$",
+        "",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+
+    normalized = re.sub(
+        r"\s+",
+        " ",
+        normalized,
+    ).strip()
+
+    return normalized
+
+
+# ============================================================
+# PRINT GENERALI
+# ============================================================
+
 def is_general_print(line):
     """
-    Identifica i print generali.
+    Identifica i comandi di print/interrogazione generale.
 
-    Sono considerati print generali:
+    Regole:
 
-    1. I comandi che terminano con 'all;'
-    2. I comandi senza parametri inseriti esplicitamente
-       nell'elenco SPECIAL_GENERAL_PRINTS
+    1. Il comando termina con 'all;'
+    2. Il comando appartiene all'elenco dei print speciali
 
-    I print vengono mantenuti nelle posizioni presenti
-    nel primo file utilizzato come template.
+    I print generali vengono presi una sola volta dal primo file
+    e mantenuti nella loro posizione originale.
     """
 
-    stripped = line.strip().lower()
+    normalized = normalize_line_for_comparison(
+        line
+    )
 
     special_general_prints = {
         "rrnlp;",
     }
 
     return (
-        stripped.endswith("all;")
-        or stripped in special_general_prints
+        normalized.endswith("all;")
+        or normalized in special_general_prints
     )
-
-def get_command_name(line):
-    """
-    Estrae il nome principale del comando.
-
-    Esempi:
-
-    RRMBI:MSC=VPI20U  -> RRMBI
-    C7SPI:SP=3-6423   -> C7SPI
-    rrnlp;             -> RRNLP
-    """
-
-    stripped = line.strip()
-
-    if not stripped:
-        return ""
-
-    match = re.match(
-        r"^([A-Za-z0-9_-]+)",
-        stripped,
-    )
-
-    if match:
-        return match.group(1).upper()
-
-    return stripped.upper()
 
 
 # ============================================================
-# SUDDIVISIONE IN SEZIONI
+# SUDDIVISIONE DEL FILE IN SEZIONI
 # ============================================================
 
 def split_into_sections(text):
     """
-    Divide il file in sezioni utilizzando le righe !*** ... ***!
-    come titolo.
+    Divide il file in sezioni.
 
-    La parte precedente al primo titolo viene conservata
-    come sezione iniziale.
+    Ogni riga !*** ... ***! apre una nuova sezione.
+
+    Le righe precedenti al primo titolo costituiscono
+    il preambolo del file.
     """
 
     text = normalize_newlines(text)
@@ -187,78 +236,108 @@ def split_into_sections(text):
 
     sections = []
 
-    current_title = "__PREAMBLE__"
-    current_title_line = None
-    current_lines = []
+    current_section = {
+        "key": "__PREAMBLE__",
+        "title_line": None,
+        "lines": [],
+    }
 
     for line in lines:
 
         if is_section_title(line):
 
-            if current_lines or current_title_line is not None:
-                sections.append(
-                    {
-                        "title": current_title,
-                        "title_line": current_title_line,
-                        "lines": current_lines,
-                    }
-                )
+            sections.append(
+                current_section
+            )
 
-            current_title = normalize_section_title(line)
-            current_title_line = line
-            current_lines = []
+            current_section = {
+                "key": get_section_key(line),
+                "title_line": line,
+                "lines": [],
+            }
 
         else:
-            current_lines.append(line)
+            current_section["lines"].append(
+                line
+            )
 
-    if current_lines or current_title_line is not None:
-        sections.append(
-            {
-                "title": current_title,
-                "title_line": current_title_line,
-                "lines": current_lines,
-            }
+    sections.append(
+        current_section
+    )
+
+    # Elimina soltanto eventuali sezioni completamente
+    # vuote create prima del primo titolo.
+    cleaned_sections = []
+
+    for section in sections:
+
+        has_content = (
+            section["title_line"] is not None
+            or any(
+                line.strip()
+                for line in section["lines"]
+            )
         )
 
-    return sections
+        if has_content:
+            cleaned_sections.append(
+                section
+            )
+
+    return cleaned_sections
 
 
 def build_section_map(sections):
     """
     Crea una mappa:
 
-    titolo sezione -> lista di sezioni con quel titolo
+    chiave logica -> lista delle sezioni corrispondenti
 
-    La lista permette di gestire anche eventuali titoli ripetuti.
+    La lista permette di gestire eventuali sezioni con
+    lo stesso titolo ripetute nello stesso file.
     """
 
     section_map = {}
 
     for section in sections:
-        title = section["title"]
 
-        if title not in section_map:
-            section_map[title] = []
+        key = section["key"]
 
-        section_map[title].append(section)
+        if key not in section_map:
+            section_map[key] = []
+
+        section_map[key].append(
+            section
+        )
 
     return section_map
 
 
 # ============================================================
-# ANALISI DEL CONTENUTO DELLA SEZIONE
+# ESTRAZIONE DEI COMANDI SPECIFICI
 # ============================================================
 
-def collect_commands_by_type(section):
+def extract_specific_commands(section):
     """
-    Raccoglie i comandi non-commento e non-print della sezione,
-    raggruppandoli per nome comando.
+    Estrae i comandi specifici di una destinazione.
 
-    I print che terminano con all; non vengono raccolti:
-    saranno mantenuti nelle posizioni del file template.
+    Vengono esclusi:
+
+    - righe vuote;
+    - commenti;
+    - print generali.
+
+    L'ordine originale dei comandi viene mantenuto.
+
+    Esempio SCTP:
+
+    IHADI destinazione
+    IHADI destinazione
+    IHAPC destinazione
+    IHAPC destinazione
     """
 
-    commands = {}
+    commands = []
 
     if section is None:
         return commands
@@ -274,43 +353,72 @@ def collect_commands_by_type(section):
         if is_general_print(line):
             continue
 
-        command_name = get_command_name(line)
-
-        if not command_name:
-            continue
-
-        if command_name not in commands:
-            commands[command_name] = []
-
-        # Il resto dei comandi viene riportato.
-        # Non viene eliminato anche se identico.
-        commands[command_name].append(line)
+        commands.append(line)
 
     return commands
 
 
-def find_trailing_output_position(lines):
+# ============================================================
+# POSIZIONAMENTO DEI COMANDI NEL TEMPLATE
+# ============================================================
+
+def find_specific_command_positions(lines):
     """
-    Cerca il punto prima del blocco finale formato da:
+    Trova le posizioni dei comandi specifici nel template.
 
-    - righe vuote
-    - commenti
-    - print generali
+    Sono considerate specifiche le righe che non sono:
 
-    Serve per inserire eventuali comandi presenti solamente
-    nei file successivi e non nel template.
+    - vuote;
+    - commenti;
+    - print generali.
     """
 
-    position = len(lines)
+    positions = []
+
+    for index, line in enumerate(lines):
+
+        if is_blank_line(line):
+            continue
+
+        if is_comment_line(line):
+            continue
+
+        if is_general_print(line):
+            continue
+
+        positions.append(index)
+
+    return positions
+
+
+def resolve_insertion_position(template_lines):
+    """
+    Determina dove inserire i comandi aggregati.
+
+    Se il template contiene già comandi specifici, viene usata
+    la posizione del primo comando specifico.
+
+    Se non ne contiene, i comandi vengono inseriti prima del
+    blocco finale di print/commenti/righe vuote.
+    """
+
+    specific_positions = find_specific_command_positions(
+        template_lines
+    )
+
+    if specific_positions:
+        return specific_positions[0]
+
+    position = len(template_lines)
 
     while position > 0:
 
-        line = lines[position - 1]
+        previous_line = template_lines[position - 1]
 
         if (
-            is_blank_line(line)
-            or is_comment_line(line)
-            or is_general_print(line)
+            is_blank_line(previous_line)
+            or is_comment_line(previous_line)
+            or is_general_print(previous_line)
         ):
             position -= 1
         else:
@@ -320,195 +428,321 @@ def find_trailing_output_position(lines):
 
 
 # ============================================================
-# MERGE DELLA SINGOLA SEZIONE
+# MERGE DI UNA SEZIONE COMUNE
 # ============================================================
 
-def merge_operational_section(
+def merge_common_section(
     template_section,
     matching_sections,
 ):
     """
-    Unisce una sezione operativa.
+    Fonde tutte le destinazioni nella stessa sezione funzionale.
 
-    Regole:
+    La struttura e i commenti sono quelli del primo file.
 
-    1. Commenti e struttura vengono presi dal primo file.
-    2. I print generali vengono mantenuti una sola volta
-       per ciascuna posizione presente nel template.
-    3. I comandi specifici vengono raccolti da tutti i file.
-    4. I comandi vengono inseriti rispettando l'ordine
-       dei tipi comando del template.
+    I comandi specifici vengono aggiunti a blocchi completi,
+    seguendo l'ordine di caricamento dei file.
     """
 
-    output_lines = []
+    template_lines = list(
+        template_section["lines"]
+    )
 
-    all_commands = {}
-    command_order = []
+    all_specific_commands = []
 
-    # Raccoglie i comandi da tutti i file nell'ordine
-    # in cui i file sono stati caricati.
+    # Ogni sezione corrisponde a una destinazione.
+    # I comandi vengono aggiunti come blocco completo,
+    # mantenendo l'ordine del file.
     for section in matching_sections:
 
-        commands = collect_commands_by_type(section)
-
-        for command_name, command_lines in commands.items():
-
-            if command_name not in all_commands:
-                all_commands[command_name] = []
-                command_order.append(command_name)
-
-            all_commands[command_name].extend(command_lines)
-
-    inserted_commands = set()
-
-    template_lines = template_section["lines"]
-
-    for line in template_lines:
-
-        # Commenti, righe vuote e print generali
-        # restano nella posizione del primo file.
-        if (
-            is_blank_line(line)
-            or is_comment_line(line)
-            or is_general_print(line)
-        ):
-            output_lines.append(line)
-            continue
-
-        command_name = get_command_name(line)
-
-        # Alla prima occorrenza del tipo comando,
-        # inserisce tutte le righe raccolte dai file.
-        if command_name not in inserted_commands:
-
-            command_lines = all_commands.get(
-                command_name,
-                [line],
-            )
-
-            output_lines.extend(command_lines)
-            inserted_commands.add(command_name)
-
-        # Le eventuali occorrenze successive dello stesso
-        # comando nel template non vengono replicate,
-        # perché sono già state inserite tutte insieme.
-
-    # Gestione di eventuali tipi comando presenti solamente
-    # nei file successivi.
-    missing_commands = []
-
-    for command_name in command_order:
-
-        if command_name not in inserted_commands:
-            missing_commands.extend(
-                all_commands[command_name]
-            )
-
-    if missing_commands:
-
-        insert_position = find_trailing_output_position(
-            output_lines
+        destination_commands = (
+            extract_specific_commands(section)
         )
 
-        output_lines[
-            insert_position:insert_position
-        ] = missing_commands
+        all_specific_commands.extend(
+            destination_commands
+        )
 
-    return output_lines
+    specific_positions = (
+        find_specific_command_positions(
+            template_lines
+        )
+    )
+
+    insertion_position = (
+        resolve_insertion_position(
+            template_lines
+        )
+    )
+
+    # Rimuove dal template i comandi specifici originali.
+    # Verranno reinseriti insieme ai comandi delle altre
+    # destinazioni.
+    specific_position_set = set(
+        specific_positions
+    )
+
+    cleaned_template_lines = []
+
+    adjusted_insertion_position = 0
+
+    for index, line in enumerate(template_lines):
+
+        if index < insertion_position:
+
+            if index not in specific_position_set:
+                adjusted_insertion_position += 1
+
+        if index in specific_position_set:
+            continue
+
+        cleaned_template_lines.append(line)
+
+    # Inserisce tutti i blocchi destinazione nella posizione
+    # occupata dai comandi specifici nel primo file.
+    cleaned_template_lines[
+        adjusted_insertion_position:
+        adjusted_insertion_position
+    ] = all_specific_commands
+
+    return cleaned_template_lines
+
+
+# ============================================================
+# RICONOSCIMENTO INTESTAZIONE GENERALE
+# ============================================================
+
+def is_central_data_section(section):
+    """
+    La sezione DATI DI CENTRALE viene copiata esclusivamente
+    dal primo file.
+    """
+
+    key = section["key"].lower()
+
+    return "dati di centrale" in key
+
+
+# ============================================================
+# INDIVIDUAZIONE DELLA DECORAZIONE DEL TITOLO
+# ============================================================
+
+def move_leading_separator_to_next_section(sections):
+    """
+    Nei file originali, il separatore superiore della sezione:
+
+    !-----------------------------------!
+
+    si trova normalmente prima del titolo:
+
+    !*** Titolo sezione ***!
+
+    Poiché il parser apre la sezione sulla riga del titolo,
+    il separatore potrebbe rimanere nella sezione precedente.
+
+    Questa funzione sposta l'ultimo separatore grafico della
+    sezione precedente all'inizio della sezione successiva.
+    """
+
+    if len(sections) < 2:
+        return sections
+
+    moved_sections = []
+
+    for section in sections:
+
+        moved_sections.append(
+            {
+                "key": section["key"],
+                "title_line": section["title_line"],
+                "lines": list(section["lines"]),
+                "leading_lines": [],
+            }
+        )
+
+    for index in range(1, len(moved_sections)):
+
+        previous_section = moved_sections[index - 1]
+        current_section = moved_sections[index]
+
+        previous_lines = previous_section["lines"]
+
+        separator_index = None
+
+        # Salta eventuali righe vuote finali.
+        check_index = len(previous_lines) - 1
+
+        while (
+            check_index >= 0
+            and is_blank_line(
+                previous_lines[check_index]
+            )
+        ):
+            check_index -= 1
+
+        if check_index >= 0:
+
+            candidate = previous_lines[check_index]
+            stripped = candidate.strip()
+
+            # Riconosce:
+            # !----------------------!
+            # !======================!
+            if re.match(
+                r"^![=\-]+\s*!$",
+                stripped,
+            ):
+                separator_index = check_index
+
+        if separator_index is not None:
+
+            leading = previous_lines[
+                separator_index:
+            ]
+
+            previous_section["lines"] = (
+                previous_lines[
+                    :separator_index
+                ]
+            )
+
+            current_section["leading_lines"] = (
+                leading
+            )
+
+    return moved_sections
 
 
 # ============================================================
 # MERGE COMPLETO
 # ============================================================
 
-def is_central_data_section(section):
-    """
-    Riconosce la sezione DATI DI CENTRALE.
-
-    Questa sezione viene copiata solamente dal primo file,
-    perché rappresenta l'intestazione comune dello script.
-    """
-
-    title = section["title"].lower()
-
-    return "dati di centrale" in title
-
-
 def merge_txt_files(uploaded_files):
     """
-    Esegue il merge completo dei file.
+    Esegue il merge completo dei file caricati.
     """
 
     parsed_files = []
 
     for uploaded_file in uploaded_files:
 
-        text = decode_uploaded_file(uploaded_file)
-        sections = split_into_sections(text)
+        text = decode_uploaded_file(
+            uploaded_file
+        )
+
+        sections = split_into_sections(
+            text
+        )
+
+        sections = (
+            move_leading_separator_to_next_section(
+                sections
+            )
+        )
 
         parsed_files.append(
             {
                 "name": uploaded_file.name,
                 "sections": sections,
-                "section_map": build_section_map(sections),
+                "section_map": build_section_map(
+                    sections
+                ),
             }
         )
 
-    # Il primo file è il template.
+    # Il primo file stabilisce:
+    # - ordine delle sezioni;
+    # - intestazioni;
+    # - commenti;
+    # - posizione dei print;
+    # - formattazione.
     template_file = parsed_files[0]
 
     final_lines = []
 
-    # Conta quante volte è già comparso un titolo.
-    # Serve se nel template esistono sezioni omonime.
-    title_occurrences = {}
+    # Gestisce eventuali sezioni con stessa chiave
+    # ripetute più volte nello stesso file.
+    key_occurrences = {}
 
     for template_section in template_file["sections"]:
 
-        title = template_section["title"]
+        section_key = template_section["key"]
 
-        occurrence_index = title_occurrences.get(title, 0)
-        title_occurrences[title] = occurrence_index + 1
+        occurrence_index = key_occurrences.get(
+            section_key,
+            0,
+        )
 
-        # Aggiunge il titolo della sezione preso dal template.
+        key_occurrences[section_key] = (
+            occurrence_index + 1
+        )
+
+        # Separatore grafico precedente al titolo.
+        final_lines.extend(
+            template_section.get(
+                "leading_lines",
+                [],
+            )
+        )
+
+        # Titolo originale del primo file.
         if template_section["title_line"] is not None:
+
             final_lines.append(
                 template_section["title_line"]
             )
 
-        # Preambolo e dati di centrale:
-        # copia esatta dal primo file.
+        # Il preambolo e i dati di centrale vengono copiati
+        # integralmente dal primo file.
         if (
-            title == "__PREAMBLE__"
-            or is_central_data_section(template_section)
+            section_key == "__PREAMBLE__"
+            or is_central_data_section(
+                template_section
+            )
         ):
+
             final_lines.extend(
                 template_section["lines"]
             )
+
             continue
 
+        # Cerca nei file caricati la stessa sezione logica.
         matching_sections = []
 
         for parsed_file in parsed_files:
 
-            file_sections = parsed_file[
-                "section_map"
-            ].get(title, [])
+            candidate_sections = (
+                parsed_file["section_map"].get(
+                    section_key,
+                    [],
+                )
+            )
 
-            if occurrence_index < len(file_sections):
+            if occurrence_index < len(
+                candidate_sections
+            ):
+
                 matching_sections.append(
-                    file_sections[occurrence_index]
+                    candidate_sections[
+                        occurrence_index
+                    ]
                 )
 
-        merged_section_lines = merge_operational_section(
+        merged_lines = merge_common_section(
             template_section=template_section,
             matching_sections=matching_sections,
         )
 
-        final_lines.extend(merged_section_lines)
+        final_lines.extend(
+            merged_lines
+        )
 
-    # Evita un numero eccessivo di righe vuote finali.
-    while final_lines and not final_lines[-1].strip():
+    # Rimuove solo le righe vuote in eccesso alla fine.
+    while (
+        final_lines
+        and not final_lines[-1].strip()
+    ):
         final_lines.pop()
 
     return "\n".join(final_lines) + "\n"
@@ -531,18 +765,22 @@ uploaded_files = st.file_uploader(
 
 if uploaded_files:
 
-    st.subheader("Ordine dei file")
+    st.subheader("File caricati")
 
     for index, uploaded_file in enumerate(
         uploaded_files,
         start=1,
     ):
+
         if index == 1:
+
             st.write(
                 f"**{index}. {uploaded_file.name}** "
-                "(template principale)"
+                "• template principale"
             )
+
         else:
+
             st.write(
                 f"**{index}. {uploaded_file.name}**"
             )
@@ -572,18 +810,24 @@ else:
             value="BSC_POOL_MERGED.txt",
         )
 
-        if not output_name.lower().endswith(".txt"):
-            output_name = output_name + ".txt"
+        if not output_name.lower().endswith(
+            ".txt"
+        ):
+            output_name += ".txt"
 
         st.download_button(
             label="Scarica il TXT unificato",
-            data=merged_text.encode("utf-8"),
+            data=merged_text.encode(
+                "utf-8"
+            ),
             file_name=output_name,
             mime="text/plain",
             use_container_width=True,
         )
 
-        st.subheader("Anteprima del file unificato")
+        st.subheader(
+            "Anteprima del file unificato"
+        )
 
         st.text_area(
             label="Contenuto generato",
