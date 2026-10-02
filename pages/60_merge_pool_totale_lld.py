@@ -211,15 +211,18 @@ if uploaded_file:
             workbook.sheet_names
         )
 
-    except Exception as e:
+    except Exception:
 
         st.warning(
-            "Impossibile leggere il workbook. "
-            "Attivata modalità manuale."
+        """
+        Il file LLD non è stato letto automaticamente.
+ 
+        È possibile continuare in modalità manuale
+        incollando le tabelle BSC e MSC.
+        """
         )
-
-        st.exception(e)
-
+ 
+    auto_read_success = False
 # ==========================================================
 # FALLBACK MANUALE
 # ==========================================================
