@@ -109,9 +109,9 @@ if st.button("Analizza"):
         ole.listdir()
     )
 
-    except Exception as e:
+except Exception as e:
 
-        st.exception(e)
+    st.exception(e)
 
     st.write("Lunghezza BSC:", len(bsc_text))
     st.write("Lunghezza MSC:", len(msc_text))
