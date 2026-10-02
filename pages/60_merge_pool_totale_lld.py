@@ -24,6 +24,50 @@ if uploaded_file:
     st.success("File caricato correttamente")
 
 st.header("Modalità Manuale")
+if st.button(
+    "Analizza LLD",
+    use_container_width=True
+):
+
+    uploaded_file.seek(0)
+
+    first_bytes = uploaded_file.read(64)
+
+    uploaded_file.seek(0)
+
+    st.subheader("Signature")
+
+    st.code(
+        repr(first_bytes)
+    )
+
+    st.subheader("Hex Dump")
+
+    st.code(
+        first_bytes.hex()
+    )
+
+    st.subheader("Tipo riconosciuto")
+
+    if first_bytes.startswith(b"PK"):
+
+        st.success(
+            "Workbook XLSX (ZIP)"
+        )
+
+    elif first_bytes.startswith(
+        b"\xd0\xcf\x11\xe0"
+    ):
+
+        st.warning(
+            "Contenitore OLE2 legacy"
+        )
+
+    else:
+
+        st.error(
+            "Formato sconosciuto"
+        )
 
 bsc_text = st.text_area(
     "Incolla tabella BSC",
