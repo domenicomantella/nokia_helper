@@ -206,16 +206,27 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file:
+    st.write("Nome:", uploaded_file.name)
+    st.write("Tipo:", uploaded_file.type)
+    st.write("Size:", uploaded_file.size)
+    
 
     try:
 
-        xls = pd.ExcelFile(uploaded_file)
-
-        tim_df = pd.read_excel(
-            xls,
-            sheet_name="TIM BSC",
-            header=None
+        uploaded_file.seek(0)
+ 
+        wb = pd.ExcelFile(
+        uploaded_file,
+        engine="openpyxl"
         )
+ 
+        st.success("Workbook aperto correttamente")
+ 
+        st.write(wb.sheet_names)
+ 
+    except Exception as e:
+ 
+        st.exception(e)
 
         bsc_info = extract_bsc_info(tim_df)
 
