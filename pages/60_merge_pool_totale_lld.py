@@ -16,55 +16,70 @@ st.title("MSC Pool Builder V0")
 
 def parse_bsc(text):
 
-    lines = [
-        l.strip()
-        for l in text.splitlines()
-        if l.strip()
-    ]
+    rows = []
 
-    if len(lines) < 5:
-        return None
+    for line in text.splitlines():
 
-    bsc_info = {}
+        cols = [
+            c.strip()
+            for c in line.split("\t")
+        ]
 
-    try:
+        if any(cols):
+            rows.append(cols)
 
-        # prima riga dati
+    first_row = None
+    second_row = None
 
-        first = lines[1].split("\t")
+    for r in rows:
 
-        bsc_info["BSC"] = first[0]
-        bsc_info["SPID"] = first[1]
-        bsc_info["SPC"] = first[2]
+        if len(r) > 5:
 
-        bsc_info["EPID_A"] = first[3]
-        bsc_info["IP_A"] = first[5]
+            # prima riga A
 
-        # ricerca seconda EPID
+            if (
+                len(r[0]) > 0
+                and len(r[1]) > 0
+                and "BBG" in r[3]
+            ):
 
-        for line in lines:
+                first_row = r
+                continue
 
-            cols = line.split("\t")
+            # seconda riga B
 
-            if len(cols) > 3:
+            if (
+                len(r) > 3
+                and r[3].startswith("BBG")
+            ):
 
-                epid = cols[3].strip()
+                second_row = r
 
-                if epid.startswith("BBG") and epid != bsc_info["EPID_A"]:
-
-                    bsc_info["EPID_B"] = epid
-
-                    if len(cols) > 5:
-                        bsc_info["IP_B"] = cols[5]
-
+                if first_row:
                     break
 
-        return bsc_info
-
-    except Exception:
-
+    if not first_row:
         return None
 
+    info = {}
+
+    info["BSC"] = first_row[0]
+    info["SPID"] = first_row[1]
+    info["SPC"] = first_row[2]
+
+    info["EPID_A"] = first_row[3]
+    info["IP_A"] = first_row[5]
+    info["PORT_A"] = first_row[7]
+
+    if second_row:
+
+        info["EPID_B"] = second_row[3]
+        info["IP_B"] = second_row[5]
+
+        if len(second_row) > 7:
+            info["PORT_B"] = second_row[7]
+
+    return info
 
 # ==========================================================
 # PARSER MSC
