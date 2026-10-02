@@ -2,3 +2,4 @@ streamlit
 openpyxl
 pandas
 xlrd>=2.0.1
+olefile
