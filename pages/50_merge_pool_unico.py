@@ -121,22 +121,26 @@ def is_general_print(line):
     """
     Identifica i print generali.
 
-    Regola concordata:
-    il comando, senza considerare maiuscole/minuscole e spazi,
-    termina con 'all;'.
+    Sono considerati print generali:
 
-    Esempi:
+    1. I comandi che terminano con 'all;'
+    2. I comandi senza parametri inseriti esplicitamente
+       nell'elenco SPECIAL_GENERAL_PRINTS
 
-    rrmbp:msc=all;
-    rltdp:msc=all;
-    c7ncp:sp=all,ssn=all;
-    ihclp:epid=all,said=all;
+    I print vengono mantenuti nelle posizioni presenti
+    nel primo file utilizzato come template.
     """
 
     stripped = line.strip().lower()
 
-    return stripped.endswith("all;")
+    special_general_prints = {
+        "rrnlp;",
+    }
 
+    return (
+        stripped.endswith("all;")
+        or stripped in special_general_prints
+    )
 
 def get_command_name(line):
     """
