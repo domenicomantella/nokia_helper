@@ -11,17 +11,20 @@ import streamlit as st
 
 st.set_page_config(
     page_title="MSC Pool Builder",
+    page_icon="🧩",
     layout="wide",
 )
 
 st.title("MSC Pool Builder")
+
 st.caption(
-    "Analisi delle tabelle BSC e MSC copiate dal foglio TIM BSC del file LLD."
+    "Generazione dello script BSC per l'aggiunta "
+    "delle destinazioni MSC selezionate."
 )
 
 
 # ==========================================================
-# INIZIALIZZAZIONE SESSION STATE
+# SESSION STATE
 # ==========================================================
 
 DEFAULT_STATE = {
@@ -35,17 +38,19 @@ DEFAULT_STATE = {
 
 
 for key, default_value in DEFAULT_STATE.items():
+
     if key not in st.session_state:
         st.session_state[key] = default_value
 
 
 # ==========================================================
-# FUNZIONI GENERALI
+# UTILITÀ
 # ==========================================================
 
 def clean_value(value):
     """
-    Restituisce una stringa pulita.
+    Converte il valore in stringa e rimuove
+    spazi o valori NaN.
     """
 
     if value is None:
@@ -61,7 +66,7 @@ def clean_value(value):
 
 def safe_get(row, index):
     """
-    Legge una colonna senza generare IndexError.
+    Legge una posizione della riga senza generare IndexError.
     """
 
     if index < len(row):
@@ -70,21 +75,9 @@ def safe_get(row, index):
     return ""
 
 
-def normalize_spc(value):
-    """
-    Mantiene il formato SPC/DPC come stringa.
-
-    Esempio:
-    3-1085
-    3-6423
-    """
-
-    return clean_value(value)
-
-
 def looks_like_ip(value):
     """
-    Controllo semplice del formato IPv4.
+    Riconoscimento semplice di un indirizzo IPv4.
     """
 
     value = clean_value(value)
@@ -99,10 +92,13 @@ def looks_like_ip(value):
 
 def looks_like_epid(value):
     """
-    Riconosce gli EPID del tipo BBG60A3 / BBG60B3.
+    Riconosce EPID del tipo:
 
-    La regola non è limitata a BBG, così può funzionare
-    anche con altri BSC.
+    BBG60A3
+    BBG60B3
+
+    mantenendo la regola abbastanza generica
+    per altri nomi BSC.
     """
 
     value = clean_value(value).upper()
@@ -117,10 +113,8 @@ def looks_like_epid(value):
 
 def looks_like_msc(value):
     """
-    Riconosce nomi MSC come:
+    Riconosce MSC del tipo:
 
-    VTO30U
-    VMI30U
     VRM30U
     VPI20U
     VNA40U
@@ -138,8 +132,8 @@ def looks_like_msc(value):
 
 def split_tabular_text(text):
     """
-    Divide il testo copiato da Excel in righe e colonne,
-    mantenendo anche le celle vuote intermedie.
+    Divide il testo copiato da Excel in righe e colonne
+    mantenendo le celle vuote intermedie.
     """
 
     rows = []
@@ -151,13 +145,56 @@ def split_tabular_text(text):
 
         columns = [
             clean_value(column)
-            for column in raw_line.rstrip("\r\n").split("\t")
+            for column in raw_line.rstrip(
+                "\r\n"
+            ).split("\t")
         ]
 
         if any(columns):
             rows.append(columns)
 
     return rows
+
+
+def format_nri(value):
+    """
+    Converte:
+
+    76,77,78,11,12,13,116
+
+    in:
+
+    76&77&78&11&12&13&116
+    """
+
+    value = clean_value(value)
+
+    nri_values = [
+        item.strip()
+        for item in re.split(
+            r"[,;&\s]+",
+            value,
+        )
+        if item.strip()
+    ]
+
+    return "&".join(nri_values)
+
+
+def format_release(value):
+    """
+    Uniforma il testo release per l'intestazione.
+    """
+
+    value = clean_value(value)
+
+    if not value:
+        return ""
+
+    if value.lower().startswith("release"):
+        return value
+
+    return f"Release {value}"
 
 
 # ==========================================================
@@ -167,20 +204,6 @@ def split_tabular_text(text):
 def parse_bsc(text):
     """
     Estrae il blocco BSC copiato dal foglio TIM BSC.
-
-    Struttura attesa:
-
-    Riga A:
-    BSC, SPID, SPC, EPID_A, VIF, IP locale A, subnet, porta
-
-    Riga intermedia:
-    EPID vuoto, eventuale altra VIF/IP
-
-    Riga B:
-    colonne iniziali vuote, EPID_B, VIF, IP locale B, subnet, porta
-
-    Il parser cerca i valori in base alla struttura delle righe
-    e non dipende dal nome specifico BBG60D.
     """
 
     rows = split_tabular_text(text)
@@ -191,8 +214,6 @@ def parse_bsc(text):
     first_row = None
     first_row_index = None
 
-    # Cerca la riga principale BSC:
-    # BSC, SPID, SPC, EPID, VIF, IP, subnet, porta.
     for index, row in enumerate(rows):
 
         bsc = safe_get(row, 0)
@@ -208,6 +229,7 @@ def parse_bsc(text):
             and looks_like_epid(epid)
             and looks_like_ip(local_ip)
         ):
+
             first_row = row
             first_row_index = index
             break
@@ -218,7 +240,7 @@ def parse_bsc(text):
     info = {
         "BSC": safe_get(first_row, 0),
         "SPID": safe_get(first_row, 1),
-        "SPC": normalize_spc(safe_get(first_row, 2)),
+        "SPC": safe_get(first_row, 2),
         "EPID_A": safe_get(first_row, 3),
         "VIF_A": safe_get(first_row, 4),
         "IP_A": safe_get(first_row, 5),
@@ -231,7 +253,6 @@ def parse_bsc(text):
         "PORT_B": "",
     }
 
-    # Cerca la seconda riga fisica BSC, dopo la prima.
     for row in rows[first_row_index + 1:]:
 
         epid = safe_get(row, 3)
@@ -242,11 +263,13 @@ def parse_bsc(text):
             and epid != info["EPID_A"]
             and looks_like_ip(local_ip)
         ):
+
             info["EPID_B"] = epid
             info["VIF_B"] = safe_get(row, 4)
             info["IP_B"] = local_ip
             info["SUBNET_B"] = safe_get(row, 6)
             info["PORT_B"] = safe_get(row, 7)
+
             break
 
     return info
@@ -281,19 +304,8 @@ MSC_COLUMNS = [
 
 def parse_msc(text):
     """
-    Legge la tabella MSC copiata da Excel.
-
-    Ogni MSC è formato da due righe fisiche:
-
-    Prima riga:
-    MSC, SPID, DPC, EPID_A, SAID_A, IP_A1, IP_A2,
-    RPN_A, PRIO_A, CNID, NRI, CAP, MSCNRILENGTH
-
-    Seconda riga:
-    prime colonne vuote, EPID_B, SAID_B, IP_B1, IP_B2,
-    RPN_B, PRIO_B
-
-    Le due righe vengono unite in un solo record logico.
+    Unisce le due righe fisiche di ogni MSC
+    in un singolo record logico.
     """
 
     excel_rows = split_tabular_text(text)
@@ -305,10 +317,7 @@ def parse_msc(text):
 
         first_column = safe_get(row, 0)
 
-        # --------------------------------------------------
-        # NUOVO RECORD MSC
-        # --------------------------------------------------
-
+        # Nuovo MSC
         if looks_like_msc(first_column):
 
             if current_record is not None:
@@ -317,7 +326,7 @@ def parse_msc(text):
             current_record = {
                 "MSC": safe_get(row, 0),
                 "SPID": safe_get(row, 1),
-                "DPC": normalize_spc(safe_get(row, 2)),
+                "DPC": safe_get(row, 2),
                 "EPID_A": safe_get(row, 3),
                 "SAID_A": safe_get(row, 4),
                 "REMOTE_IP_A1": safe_get(row, 5),
@@ -333,15 +342,15 @@ def parse_msc(text):
                 "CNID": safe_get(row, 9),
                 "NRI": safe_get(row, 10),
                 "CAP": safe_get(row, 11),
-                "MSCNRILENGTH": safe_get(row, 12),
+                "MSCNRILENGTH": safe_get(
+                    row,
+                    12,
+                ),
             }
 
             continue
 
-        # --------------------------------------------------
-        # SECONDA RIGA DELLO STESSO MSC
-        # --------------------------------------------------
-
+        # Secondo ramo SCTP del record corrente
         if current_record is None:
             continue
 
@@ -359,14 +368,32 @@ def parse_msc(text):
 
         if is_second_sctp_row:
 
-            current_record["EPID_B"] = epid_candidate
-            current_record["SAID_B"] = said_candidate
-            current_record["REMOTE_IP_B1"] = remote_ip_1
-            current_record["REMOTE_IP_B2"] = remote_ip_2
-            current_record["RPN_B"] = safe_get(row, 7)
-            current_record["PRIO_B"] = safe_get(row, 8)
+            current_record["EPID_B"] = (
+                epid_candidate
+            )
 
-    # Aggiunge l'ultimo record rimasto aperto.
+            current_record["SAID_B"] = (
+                said_candidate
+            )
+
+            current_record["REMOTE_IP_B1"] = (
+                remote_ip_1
+            )
+
+            current_record["REMOTE_IP_B2"] = (
+                remote_ip_2
+            )
+
+            current_record["RPN_B"] = safe_get(
+                row,
+                7,
+            )
+
+            current_record["PRIO_B"] = safe_get(
+                row,
+                8,
+            )
+
     if current_record is not None:
         records.append(current_record)
 
@@ -382,13 +409,16 @@ def parse_msc(text):
 
 def validate_bsc_info(bsc_info):
     """
-    Restituisce un elenco di anomalie BSC.
+    Controlla i campi BSC indispensabili.
     """
 
-    issues = []
-
     if not bsc_info:
-        return ["Tabella BSC non riconosciuta."]
+
+        return [
+            "Tabella BSC non riconosciuta."
+        ]
+
+    issues = []
 
     required_fields = [
         "BSC",
@@ -401,7 +431,11 @@ def validate_bsc_info(bsc_info):
     ]
 
     for field in required_fields:
-        if not clean_value(bsc_info.get(field)):
+
+        if not clean_value(
+            bsc_info.get(field)
+        ):
+
             issues.append(
                 f"Campo BSC mancante: {field}"
             )
@@ -411,27 +445,17 @@ def validate_bsc_info(bsc_info):
 
 def validate_msc_df(msc_df):
     """
-    Restituisce un elenco di anomalie MSC.
+    Controlla che i record MSC contengano
+    entrambi i rami SCTP e i dati comuni.
     """
 
-    issues = []
-
     if msc_df is None or msc_df.empty:
-        return ["Tabella MSC non riconosciuta."]
 
-    duplicate_msc = (
-        msc_df["MSC"]
-        .value_counts()
-        .loc[lambda values: values > 1]
-        .index
-        .tolist()
-    )
+        return [
+            "Tabella MSC non riconosciuta."
+        ]
 
-    if duplicate_msc:
-        issues.append(
-            "MSC duplicati: "
-            + ", ".join(duplicate_msc)
-        )
+    issues = []
 
     required_fields = [
         "MSC",
@@ -444,6 +468,8 @@ def validate_msc_df(msc_df):
         "SAID_B",
         "REMOTE_IP_B1",
         "REMOTE_IP_B2",
+        "RPN_A",
+        "RPN_B",
         "CNID",
         "NRI",
         "CAP",
@@ -458,25 +484,553 @@ def validate_msc_df(msc_df):
         missing_fields = [
             field
             for field in required_fields
-            if not clean_value(row.get(field))
+            if not clean_value(
+                row.get(field)
+            )
         ]
 
         if missing_fields:
+
             issues.append(
                 f"{msc_name}: campi mancanti "
                 + ", ".join(missing_fields)
             )
 
+    duplicate_msc = (
+        msc_df["MSC"]
+        .value_counts()
+        .loc[lambda values: values > 1]
+        .index
+        .tolist()
+    )
+
+    if duplicate_msc:
+
+        issues.append(
+            "MSC duplicati: "
+            + ", ".join(duplicate_msc)
+        )
+
     return issues
 
 
 # ==========================================================
-# CALLBACK E GESTIONE SESSIONE
+# GENERAZIONE SCRIPT
+# ==========================================================
+
+def append_section(
+    output,
+    separator,
+    title,
+):
+    """
+    Aggiunge un'intestazione di sezione.
+    """
+
+    output.append(f" !{separator}!")
+    output.append(f" !*** {title} ***!")
+    output.append(f" !{separator}!")
+
+
+def generate_bsc_script(
+    bsc_info,
+    selected_df,
+    release="25.Q4",
+    company_group="[MR]",
+):
+    """
+    Genera lo script completo BSC per tutti
+    gli MSC selezionati.
+
+    L'ordine delle sezioni replica il template
+    operativo precedentemente analizzato.
+    """
+
+    lines = []
+
+    bsc_name = clean_value(
+        bsc_info.get("BSC")
+    )
+
+    epid_a = clean_value(
+        bsc_info.get("EPID_A")
+    )
+
+    epid_b = clean_value(
+        bsc_info.get("EPID_B")
+    )
+
+    local_ip_a = clean_value(
+        bsc_info.get("IP_A")
+    )
+
+    local_ip_b = clean_value(
+        bsc_info.get("IP_B")
+    )
+
+    # ------------------------------------------------------
+    # DATI DI CENTRALE
+    # ------------------------------------------------------
+
+    lines.extend(
+        [
+            " !=============================================================!",
+            " !                 *** DATI DI CENTRALE ***                    !",
+            " !=============================================================!",
+            f" ! CENTRALE       : {bsc_name:<43}!",
+            " ! TIPOLOGIA      : BSC/EVO Controller 8230 R2    Rete  GSM/2G !",
+            f" ! RELEASE        : {format_release(release):<43}!",
+            f" ! SOCIETA-GRUPPO : {company_group:<43}!",
+            " ! PREPARATO      :                                            !",
+            " ! APPROVATO      :                                            !",
+            " ! TELEFONO       :                                            !",
+            " ! DATA FILE      :                                            !",
+            " ! DATA PRINT     :                                            !",
+            " ! INPUT          :                                            !",
+            " ! COD ATTIVITA   :                                            !",
+            " ! NOME FILE      : AoIP_Add-Node_a.Bsc                        !",
+            " ! REVISIONE FILE : A                                          !",
+            " ! COMMISSIONE    :                                            !",
+            " ! TELEFONO REP   :                                            !",
+            " ! VERIFICATO     :                                            !",
+            " ! TELEFONO VER   :                                            !",
+            " !=============================================================!",
+            " ! NOTE           : Aggiunta nodi Core in Pool A Over IP       !",
+            " !                  per BSC EvoC8230                           !",
+            " !=============================================================!",
+            "!CCITT7 SIGNALLING;",
+        ]
+    )
+
+    # ------------------------------------------------------
+    # MSC DEFINITION
+    # ------------------------------------------------------
+
+    append_section(
+        lines,
+        "-----------------------------",
+        "MSC definition in Bsc",
+    )
+
+    lines.append(
+        "     rrmbp:msc=all;"
+    )
+
+    lines.append(
+        "     rltdp:msc=all;"
+    )
+
+    for _, row in selected_df.iterrows():
+
+        msc = clean_value(row["MSC"])
+        dpc = clean_value(row["DPC"])
+        cnid = clean_value(row["CNID"])
+
+        lines.append(
+            f"     RRMBI:MSC={msc}, "
+            f"SP={dpc}, "
+            f"CNID={cnid};"
+            f"    !* MSC Server - {msc}!"
+        )
+
+    lines.append(
+        "     rrmbp:msc=all;"
+    )
+
+    lines.append(
+        "     rltdp:msc=all;"
+    )
+
+    # ------------------------------------------------------
+    # NRI
+    # ------------------------------------------------------
+
+    append_section(
+        lines,
+        "-----------------------------------",
+        "Define NRI Value and Lenght",
+    )
+
+    lines.append(
+        "     rrnrp:msc=all;"
+    )
+
+    lines.append(
+        "     rrnlp;"
+    )
+
+    for _, row in selected_df.iterrows():
+
+        msc = clean_value(row["MSC"])
+        nri = format_nri(row["NRI"])
+
+        lines.append(
+            f"     RRNRI:MSC={msc}, "
+            f"NRI={nri};"
+            f"    !* MSC Server - {msc}!"
+        )
+
+    lines.append(
+        "     rrnrp:msc=all;"
+    )
+
+    lines.append(
+        "     rrnlp;"
+    )
+
+    # ------------------------------------------------------
+    # C7 SIGNALLING POINT
+    # ------------------------------------------------------
+
+    append_section(
+        lines,
+        "----------------------------------------------------",
+        "C7 Signalling Point in the different Network",
+    )
+
+    lines.append(
+        "     c7spp:sp=all;"
+    )
+
+    for _, row in selected_df.iterrows():
+
+        msc = clean_value(row["MSC"])
+        dpc = clean_value(row["DPC"])
+
+        lines.append(
+            f"     C7SPI:SP={dpc}, "
+            f"NET=BOTH, PREF=IP, LMSG;"
+            f"    !* MSC Server - {msc}!"
+        )
+
+        lines.append(
+            f"     C7PNC:SP={dpc}, "
+            f"SPID={msc};"
+        )
+
+    lines.append(
+        "     c7spp:sp=all;"
+    )
+
+    # ------------------------------------------------------
+    # SCCP NETWORK BROADCAST
+    # ------------------------------------------------------
+
+    append_section(
+        lines,
+        "-----------------------------------------------",
+        "C7 SCCP Network Broadcast Status Change",
+    )
+
+    lines.append(
+        "     c7ltp:ls=all;"
+    )
+
+    lines.append(
+        "     c7rsp:dest=all;"
+    )
+
+    lines.append(
+        "     c7ncp:sp=all,ssn=all;"
+    )
+
+    for _, row in selected_df.iterrows():
+
+        msc = clean_value(row["MSC"])
+        dpc = clean_value(row["DPC"])
+
+        lines.append(
+            f"     C7NPI:SP={dpc};"
+            f"            !* MSC Server - {msc}!"
+        )
+
+        lines.append(
+            f"     C7NPC:SP={dpc}, MSG=1;"
+        )
+
+        lines.append(
+            f"     C7NSI:SP={dpc}, SSN=254;"
+        )
+
+    lines.append(
+        "     c7ltp:ls=all;"
+    )
+
+    lines.append(
+        "     c7rsp:dest=all;"
+    )
+
+    lines.append(
+        "     c7ncp:sp=all,ssn=all;"
+    )
+
+    # ------------------------------------------------------
+    # SIGTRAN COMMENT
+    # ------------------------------------------------------
+
+    lines.extend(
+        [
+            " !---------------------------------------------------------------!",
+            " !   Sigtran Connection for signalling trasport                  !",
+            " !---------------------------------------------------------------!",
+        ]
+    )
+
+    # ------------------------------------------------------
+    # SCTP ASSOCIATIONS
+    # ------------------------------------------------------
+
+    append_section(
+        lines,
+        "------------------------------------------------------------------",
+        "Create SCTP Associations towards MSC Pool",
+    )
+
+    for _, row in selected_df.iterrows():
+
+        msc = clean_value(row["MSC"])
+
+        said_a = clean_value(
+            row["SAID_A"]
+        )
+
+        said_b = clean_value(
+            row["SAID_B"]
+        )
+
+        remote_a1 = clean_value(
+            row["REMOTE_IP_A1"]
+        )
+
+        remote_a2 = clean_value(
+            row["REMOTE_IP_A2"]
+        )
+
+        remote_b1 = clean_value(
+            row["REMOTE_IP_B1"]
+        )
+
+        remote_b2 = clean_value(
+            row["REMOTE_IP_B2"]
+        )
+
+        rpn_a = clean_value(
+            row["RPN_A"]
+        )
+
+        rpn_b = clean_value(
+            row["RPN_B"]
+        )
+
+        lines.append(
+            f"     IHADI:SAID={said_a}, "
+            f"EPID={epid_a}, "
+            f'RIP="{remote_a1}"&"{remote_a2}", '
+            f"SCTPCP, RPN={rpn_a};"
+        )
+
+        lines.append(
+            f"     IHADI:SAID={said_b}, "
+            f"EPID={epid_b}, "
+            f'RIP="{remote_b1}"&"{remote_b2}", '
+            f"SCTPCP, RPN={rpn_b};"
+        )
+
+        lines.append(
+            f"     IHAPC:SAID={said_a}, "
+            f'PLIP="{local_ip_a}", '
+            f'PRIP="{remote_a1}";'
+        )
+
+        lines.append(
+            f"     IHAPC:SAID={said_b}, "
+            f'PLIP="{local_ip_b}", '
+            f'PRIP="{remote_b1}";'
+        )
+
+    lines.append(
+        "     ihclp:epid=all,said=all;"
+    )
+
+    lines.append(
+        "     ihalp:epid=all;"
+    )
+
+    # ------------------------------------------------------
+    # C7 SIGNALLING POINT CHANGE
+    # ------------------------------------------------------
+
+    append_section(
+        lines,
+        "----------------------------------",
+        "C7 Signalling Point Change",
+    )
+
+    lines.append(
+        "     c7spp:sp=all;"
+    )
+
+    for _, row in selected_df.iterrows():
+
+        msc = clean_value(row["MSC"])
+        dpc = clean_value(row["DPC"])
+
+        lines.append(
+            f"     C7SPC:SP={dpc}, "
+            f"NET=BOTH, PREF=IP;"
+            f"    !* MSC Server - {msc}!"
+        )
+
+    # ------------------------------------------------------
+    # M3UA ROUTING SPECIFICATION
+    # ------------------------------------------------------
+
+    append_section(
+        lines,
+        "---------------------------------------------",
+        "M3UA, Routing Specification, Initiate",
+    )
+
+    lines.append(
+        "     m3rsp:dest=all;"
+    )
+
+    for _, row in selected_df.iterrows():
+
+        dpc = clean_value(row["DPC"])
+        said_a = clean_value(row["SAID_A"])
+        said_b = clean_value(row["SAID_B"])
+        prio_a = clean_value(row["PRIO_A"])
+        prio_b = clean_value(row["PRIO_B"])
+
+        lines.append(
+            f"     M3RSI:DEST={dpc}, "
+            f"SAID={said_a}, "
+            f"PRIO={prio_a};"
+        )
+
+        lines.append(
+            f"     M3RSI:DEST={dpc}, "
+            f"SAID={said_b}, "
+            f"PRIO={prio_b};"
+        )
+
+    # ------------------------------------------------------
+    # SCTP ASSOCIATION STATE
+    # ------------------------------------------------------
+
+    append_section(
+        lines,
+        "----------------------------------------------------",
+        "IP Transport, SCTP Association State, Change",
+    )
+
+    for _, row in selected_df.iterrows():
+
+        said_a = clean_value(row["SAID_A"])
+        said_b = clean_value(row["SAID_B"])
+
+        lines.append(
+            f"     IHASC:SAID={said_a}, "
+            "PROC=ESTB, USER=M3UA, SCTPCP;"
+        )
+
+        lines.append(
+            f"     IHASC:SAID={said_b}, "
+            "PROC=ESTB, USER=M3UA, SCTPCP;"
+        )
+
+    # ------------------------------------------------------
+    # M3UA ROUTING ACTIVATION
+    # ------------------------------------------------------
+
+    append_section(
+        lines,
+        "------------------------------------------",
+        "M3UA, Routing Activation, Initiate",
+    )
+
+    for _, row in selected_df.iterrows():
+
+        dpc = clean_value(row["DPC"])
+        said_a = clean_value(row["SAID_A"])
+        said_b = clean_value(row["SAID_B"])
+
+        lines.append(
+            f"     M3RAI:DEST={dpc}, "
+            f"SAID={said_a};"
+        )
+
+        lines.append(
+            f"     M3RAI:DEST={dpc}, "
+            f"SAID={said_b};"
+        )
+
+    # ------------------------------------------------------
+    # M3UA ASSOCIATION STATE
+    # ------------------------------------------------------
+
+    append_section(
+        lines,
+        "---------------------------------------",
+        "M3UA, Association State, Change",
+    )
+
+    for _, row in selected_df.iterrows():
+
+        said_a = clean_value(row["SAID_A"])
+        said_b = clean_value(row["SAID_B"])
+
+        lines.append(
+            f"     M3ASC:SAID={said_a}, "
+            "PROC=ACT;"
+        )
+
+        lines.append(
+            f"     M3ASC:SAID={said_b}, "
+            "PROC=ACT;"
+        )
+
+    # ------------------------------------------------------
+    # TRAFFIC DISTRIBUTION
+    # ------------------------------------------------------
+
+    append_section(
+        lines,
+        "-----------------------------------------------------------------",
+        "Radio Control Cell, MSC Traffic Distribution Data, Change",
+    )
+
+    lines.append(
+        "     rltdp:msc=all;"
+    )
+
+    for _, row in selected_df.iterrows():
+
+        msc = clean_value(row["MSC"])
+        cap = clean_value(row["CAP"])
+
+        lines.append(
+            f"     RLTDC:MSC={msc}, "
+            f"MODE=ACTIVE, "
+            f"CAP={cap}, "
+            "PART=100, RAND=219;"
+        )
+
+    lines.append(
+        "     rltdp:msc=all;"
+    )
+
+    return "\n".join(lines) + "\n"
+
+
+# ==========================================================
+# CALLBACK
 # ==========================================================
 
 def run_analysis():
     """
-    Analizza i testi presenti nei widget e salva i risultati
+    Esegue il parsing e salva i risultati
     nella sessione Streamlit.
     """
 
@@ -501,17 +1055,19 @@ def run_analysis():
     st.session_state["analysis_done"] = True
 
     if msc_df is not None and not msc_df.empty:
+
         st.session_state["selected_msc"] = (
             msc_df["MSC"].tolist()
         )
+
     else:
+
         st.session_state["selected_msc"] = []
 
 
 def edit_input():
     """
-    Torna alla schermata di input senza cancellare
-    i testi precedentemente incollati.
+    Torna agli input mantenendo i testi.
     """
 
     st.session_state["analysis_done"] = False
@@ -519,10 +1075,11 @@ def edit_input():
 
 def reset_all():
     """
-    Azzera completamente input, risultati e selezioni.
+    Cancella completamente la sessione.
     """
 
     for key, default_value in DEFAULT_STATE.items():
+
         st.session_state[key] = default_value
 
     st.session_state["bsc_input_widget"] = ""
@@ -530,7 +1087,7 @@ def reset_all():
 
 
 # ==========================================================
-# SCHERMATA INPUT
+# INPUT
 # ==========================================================
 
 if not st.session_state["analysis_done"]:
@@ -538,8 +1095,8 @@ if not st.session_state["analysis_done"]:
     st.subheader("1. Inserimento dati")
 
     st.info(
-        "Dal foglio TIM BSC del LLD copia la tabella BSC "
-        "e la tabella MSC, quindi incollale nei rispettivi campi."
+        "Copia dal foglio TIM BSC del LLD il blocco BSC "
+        "e il blocco MSC, includendo le intestazioni."
     )
 
     tab_bsc, tab_msc = st.tabs(
@@ -556,10 +1113,6 @@ if not st.session_state["analysis_done"]:
             value=st.session_state["bsc_text"],
             height=260,
             key="bsc_input_widget",
-            placeholder=(
-                "Copia dal foglio TIM BSC l'intestazione e "
-                "le righe del blocco BSC..."
-            ),
         )
 
     with tab_msc:
@@ -569,10 +1122,6 @@ if not st.session_state["analysis_done"]:
             value=st.session_state["msc_text"],
             height=430,
             key="msc_input_widget",
-            placeholder=(
-                "Copia dal foglio TIM BSC l'intestazione e "
-                "tutte le righe del blocco MSC..."
-            ),
         )
 
     button_col_1, button_col_2 = st.columns(
@@ -598,7 +1147,7 @@ if not st.session_state["analysis_done"]:
 
 
 # ==========================================================
-# SCHERMATA RISULTATI
+# RISULTATI E GENERAZIONE
 # ==========================================================
 
 else:
@@ -614,11 +1163,9 @@ else:
 
     with top_col_1:
 
-        if bsc_info and msc_df is not None:
-            st.success(
-                "Dati caricati nella sessione. "
-                "Le selezioni MSC non cancellano l'analisi."
-            )
+        st.success(
+            "Analisi memorizzata nella sessione."
+        )
 
     with top_col_2:
 
@@ -636,46 +1183,44 @@ else:
             on_click=reset_all,
         )
 
+    bsc_issues = validate_bsc_info(
+        bsc_info
+    )
+
+    msc_issues = validate_msc_df(
+        msc_df
+    )
+
     # ------------------------------------------------------
     # BSC
     # ------------------------------------------------------
 
     st.markdown("### BSC")
 
-    bsc_issues = validate_bsc_info(
-        bsc_info
-    )
-
     if bsc_info:
 
-        metric_1, metric_2, metric_3, metric_4 = (
-            st.columns(4)
-        )
+        c1, c2, c3, c4 = st.columns(4)
 
-        metric_1.metric(
+        c1.metric(
             "BSC",
             bsc_info.get("BSC", ""),
         )
 
-        metric_2.metric(
+        c2.metric(
             "SPID",
             bsc_info.get("SPID", ""),
         )
 
-        metric_3.metric(
+        c3.metric(
             "SPC",
             bsc_info.get("SPC", ""),
         )
 
-        metric_4.metric(
-            "SCTP locali",
+        c4.metric(
+            "EPID",
             (
-                "2"
-                if (
-                    bsc_info.get("EPID_A")
-                    and bsc_info.get("EPID_B")
-                )
-                else "Incompleto"
+                f"{bsc_info.get('EPID_A', '')} / "
+                f"{bsc_info.get('EPID_B', '')}"
             ),
         )
 
@@ -693,10 +1238,6 @@ else:
                     ),
                     "Local IP": bsc_info.get(
                         "IP_A",
-                        "",
-                    ),
-                    "Subnet": bsc_info.get(
-                        "SUBNET_A",
                         "",
                     ),
                     "Porta": bsc_info.get(
@@ -718,10 +1259,6 @@ else:
                         "IP_B",
                         "",
                     ),
-                    "Subnet": bsc_info.get(
-                        "SUBNET_B",
-                        "",
-                    ),
                     "Porta": bsc_info.get(
                         "PORT_B",
                         "",
@@ -736,39 +1273,13 @@ else:
             hide_index=True,
         )
 
-    if bsc_issues:
-
-        with st.expander(
-            f"Anomalie BSC ({len(bsc_issues)})",
-            expanded=True,
-        ):
-            for issue in bsc_issues:
-                st.warning(issue)
-
     # ------------------------------------------------------
     # MSC
     # ------------------------------------------------------
 
     st.markdown("### MSC")
 
-    msc_issues = validate_msc_df(
-        msc_df
-    )
-
     if msc_df is not None and not msc_df.empty:
-
-        total_msc = len(msc_df)
-
-        st.write(
-            f"MSC riconosciuti: **{total_msc}**"
-        )
-
-        st.dataframe(
-            msc_df,
-            use_container_width=True,
-            height=430,
-            hide_index=True,
-        )
 
         available_msc = (
             msc_df["MSC"]
@@ -793,10 +1304,6 @@ else:
             "MSC da includere nello script",
             options=available_msc,
             key="selected_msc",
-            help=(
-                "La selezione resta memorizzata anche quando "
-                "la pagina Streamlit viene rieseguita."
-            ),
         )
 
         selected_df = msc_df[
@@ -805,87 +1312,127 @@ else:
             )
         ].copy()
 
-        selection_col_1, selection_col_2 = st.columns(
-            2
+        m1, m2 = st.columns(2)
+
+        m1.metric(
+            "MSC disponibili",
+            len(msc_df),
         )
 
-        with selection_col_1:
+        m2.metric(
+            "MSC selezionati",
+            len(selected_df),
+        )
 
-            st.metric(
-                "MSC disponibili",
-                total_msc,
+        preview_columns = [
+            "MSC",
+            "DPC",
+            "EPID_A",
+            "SAID_A",
+            "EPID_B",
+            "SAID_B",
+            "CNID",
+            "NRI",
+            "CAP",
+        ]
+
+        st.dataframe(
+            selected_df[preview_columns],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        # --------------------------------------------------
+        # PARAMETRI GENERAZIONE
+        # --------------------------------------------------
+
+        st.markdown(
+            "### 3. Generazione script"
+        )
+
+        generation_col_1, generation_col_2 = (
+            st.columns(2)
+        )
+
+        with generation_col_1:
+
+            release = st.text_input(
+                "Release",
+                value="25.Q4",
             )
 
-        with selection_col_2:
+        with generation_col_2:
 
-            st.metric(
-                "MSC selezionati",
-                len(selected_df),
+            company_group = st.text_input(
+                "Società / Gruppo",
+                value="[MR]",
             )
+
+        blocking_issues = (
+            bsc_issues + msc_issues
+        )
 
         if selected_df.empty:
 
             st.warning(
-                "Nessun MSC selezionato."
+                "Seleziona almeno un MSC."
             )
+
+        elif blocking_issues:
+
+            st.error(
+                "Lo script non può essere generato "
+                "perché sono presenti dati mancanti."
+            )
+
+            with st.expander(
+                "Visualizza anomalie",
+                expanded=True,
+            ):
+
+                for issue in blocking_issues:
+                    st.warning(issue)
 
         else:
 
-            st.markdown(
-                "#### Anteprima MSC selezionati"
+            generated_script = (
+                generate_bsc_script(
+                    bsc_info=bsc_info,
+                    selected_df=selected_df,
+                    release=release,
+                    company_group=company_group,
+                )
             )
 
-            preview_columns = [
-                "MSC",
-                "DPC",
-                "EPID_A",
-                "SAID_A",
-                "EPID_B",
-                "SAID_B",
-                "CNID",
-                "NRI",
-                "CAP",
-            ]
-
-            st.dataframe(
-                selected_df[preview_columns],
-                use_container_width=True,
-                hide_index=True,
-            )
-
-            csv_buffer = io.StringIO()
-
-            selected_df.to_csv(
-                csv_buffer,
-                index=False,
-            )
-
-            output_name = (
+            output_file_name = (
                 f"{bsc_info.get('BSC', 'BSC')}"
-                "_MSC_selezionati.csv"
-                if bsc_info
-                else "MSC_selezionati.csv"
+                "_MSC_POOL_ADD.txt"
             )
 
             st.download_button(
-                "Scarica CSV degli MSC selezionati",
-                data=csv_buffer.getvalue(),
-                file_name=output_name,
-                mime="text/csv",
+                "Scarica script BSC",
+                data=generated_script.encode(
+                    "utf-8"
+                ),
+                file_name=output_file_name,
+                mime="text/plain",
+                type="primary",
                 use_container_width=True,
             )
+
+            with st.expander(
+                "Anteprima script",
+                expanded=True,
+            ):
+
+                st.text_area(
+                    "Script generato",
+                    value=generated_script,
+                    height=700,
+                )
 
     else:
 
         st.error(
             "Tabella MSC non riconosciuta."
         )
-
-    if msc_issues:
-
-        with st.expander(
-            f"Anomalie MSC ({len(msc_issues)})",
-            expanded=True,
-        ):
-            for issue in msc_issues:
-                st.warning(issue)
