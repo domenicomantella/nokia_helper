@@ -471,4 +471,421 @@ def validate_msc_df(msc_df):
 
 
 # ==========================================================
-# CALLBACK E 
+# CALLBACK E GESTIONE SESSIONE
+# ==========================================================
+
+def run_analysis():
+    """
+    Analizza i testi presenti nei widget e salva i risultati
+    nella sessione Streamlit.
+    """
+
+    bsc_text = st.session_state.get(
+        "bsc_input_widget",
+        "",
+    )
+
+    msc_text = st.session_state.get(
+        "msc_input_widget",
+        "",
+    )
+
+    st.session_state["bsc_text"] = bsc_text
+    st.session_state["msc_text"] = msc_text
+
+    bsc_info = parse_bsc(bsc_text)
+    msc_df = parse_msc(msc_text)
+
+    st.session_state["bsc_info"] = bsc_info
+    st.session_state["msc_df"] = msc_df
+    st.session_state["analysis_done"] = True
+
+    if msc_df is not None and not msc_df.empty:
+        st.session_state["selected_msc"] = (
+            msc_df["MSC"].tolist()
+        )
+    else:
+        st.session_state["selected_msc"] = []
+
+
+def edit_input():
+    """
+    Torna alla schermata di input senza cancellare
+    i testi precedentemente incollati.
+    """
+
+    st.session_state["analysis_done"] = False
+
+
+def reset_all():
+    """
+    Azzera completamente input, risultati e selezioni.
+    """
+
+    for key, default_value in DEFAULT_STATE.items():
+        st.session_state[key] = default_value
+
+    st.session_state["bsc_input_widget"] = ""
+    st.session_state["msc_input_widget"] = ""
+
+
+# ==========================================================
+# SCHERMATA INPUT
+# ==========================================================
+
+if not st.session_state["analysis_done"]:
+
+    st.subheader("1. Inserimento dati")
+
+    st.info(
+        "Dal foglio TIM BSC del LLD copia la tabella BSC "
+        "e la tabella MSC, quindi incollale nei rispettivi campi."
+    )
+
+    tab_bsc, tab_msc = st.tabs(
+        [
+            "Tabella BSC",
+            "Tabella MSC",
+        ]
+    )
+
+    with tab_bsc:
+
+        st.text_area(
+            "Incolla la tabella BSC",
+            value=st.session_state["bsc_text"],
+            height=260,
+            key="bsc_input_widget",
+            placeholder=(
+                "Copia dal foglio TIM BSC l'intestazione e "
+                "le righe del blocco BSC..."
+            ),
+        )
+
+    with tab_msc:
+
+        st.text_area(
+            "Incolla la tabella MSC",
+            value=st.session_state["msc_text"],
+            height=430,
+            key="msc_input_widget",
+            placeholder=(
+                "Copia dal foglio TIM BSC l'intestazione e "
+                "tutte le righe del blocco MSC..."
+            ),
+        )
+
+    button_col_1, button_col_2 = st.columns(
+        [3, 1]
+    )
+
+    with button_col_1:
+
+        st.button(
+            "Analizza tabelle",
+            type="primary",
+            use_container_width=True,
+            on_click=run_analysis,
+        )
+
+    with button_col_2:
+
+        st.button(
+            "Azzera",
+            use_container_width=True,
+            on_click=reset_all,
+        )
+
+
+# ==========================================================
+# SCHERMATA RISULTATI
+# ==========================================================
+
+else:
+
+    bsc_info = st.session_state["bsc_info"]
+    msc_df = st.session_state["msc_df"]
+
+    st.subheader("2. Risultati analisi")
+
+    top_col_1, top_col_2, top_col_3 = st.columns(
+        [3, 1, 1]
+    )
+
+    with top_col_1:
+
+        if bsc_info and msc_df is not None:
+            st.success(
+                "Dati caricati nella sessione. "
+                "Le selezioni MSC non cancellano l'analisi."
+            )
+
+    with top_col_2:
+
+        st.button(
+            "Modifica dati",
+            use_container_width=True,
+            on_click=edit_input,
+        )
+
+    with top_col_3:
+
+        st.button(
+            "Nuova analisi",
+            use_container_width=True,
+            on_click=reset_all,
+        )
+
+    # ------------------------------------------------------
+    # BSC
+    # ------------------------------------------------------
+
+    st.markdown("### BSC")
+
+    bsc_issues = validate_bsc_info(
+        bsc_info
+    )
+
+    if bsc_info:
+
+        metric_1, metric_2, metric_3, metric_4 = (
+            st.columns(4)
+        )
+
+        metric_1.metric(
+            "BSC",
+            bsc_info.get("BSC", ""),
+        )
+
+        metric_2.metric(
+            "SPID",
+            bsc_info.get("SPID", ""),
+        )
+
+        metric_3.metric(
+            "SPC",
+            bsc_info.get("SPC", ""),
+        )
+
+        metric_4.metric(
+            "SCTP locali",
+            (
+                "2"
+                if (
+                    bsc_info.get("EPID_A")
+                    and bsc_info.get("EPID_B")
+                )
+                else "Incompleto"
+            ),
+        )
+
+        bsc_display_df = pd.DataFrame(
+            [
+                {
+                    "Lato": "A",
+                    "EPID": bsc_info.get(
+                        "EPID_A",
+                        "",
+                    ),
+                    "VIF": bsc_info.get(
+                        "VIF_A",
+                        "",
+                    ),
+                    "Local IP": bsc_info.get(
+                        "IP_A",
+                        "",
+                    ),
+                    "Subnet": bsc_info.get(
+                        "SUBNET_A",
+                        "",
+                    ),
+                    "Porta": bsc_info.get(
+                        "PORT_A",
+                        "",
+                    ),
+                },
+                {
+                    "Lato": "B",
+                    "EPID": bsc_info.get(
+                        "EPID_B",
+                        "",
+                    ),
+                    "VIF": bsc_info.get(
+                        "VIF_B",
+                        "",
+                    ),
+                    "Local IP": bsc_info.get(
+                        "IP_B",
+                        "",
+                    ),
+                    "Subnet": bsc_info.get(
+                        "SUBNET_B",
+                        "",
+                    ),
+                    "Porta": bsc_info.get(
+                        "PORT_B",
+                        "",
+                    ),
+                },
+            ]
+        )
+
+        st.dataframe(
+            bsc_display_df,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    if bsc_issues:
+
+        with st.expander(
+            f"Anomalie BSC ({len(bsc_issues)})",
+            expanded=True,
+        ):
+            for issue in bsc_issues:
+                st.warning(issue)
+
+    # ------------------------------------------------------
+    # MSC
+    # ------------------------------------------------------
+
+    st.markdown("### MSC")
+
+    msc_issues = validate_msc_df(
+        msc_df
+    )
+
+    if msc_df is not None and not msc_df.empty:
+
+        total_msc = len(msc_df)
+
+        st.write(
+            f"MSC riconosciuti: **{total_msc}**"
+        )
+
+        st.dataframe(
+            msc_df,
+            use_container_width=True,
+            height=430,
+            hide_index=True,
+        )
+
+        available_msc = (
+            msc_df["MSC"]
+            .dropna()
+            .astype(str)
+            .tolist()
+        )
+
+        valid_previous_selection = [
+            msc
+            for msc in st.session_state[
+                "selected_msc"
+            ]
+            if msc in available_msc
+        ]
+
+        st.session_state[
+            "selected_msc"
+        ] = valid_previous_selection
+
+        selected_msc = st.multiselect(
+            "MSC da includere nello script",
+            options=available_msc,
+            key="selected_msc",
+            help=(
+                "La selezione resta memorizzata anche quando "
+                "la pagina Streamlit viene rieseguita."
+            ),
+        )
+
+        selected_df = msc_df[
+            msc_df["MSC"].isin(
+                selected_msc
+            )
+        ].copy()
+
+        selection_col_1, selection_col_2 = st.columns(
+            2
+        )
+
+        with selection_col_1:
+
+            st.metric(
+                "MSC disponibili",
+                total_msc,
+            )
+
+        with selection_col_2:
+
+            st.metric(
+                "MSC selezionati",
+                len(selected_df),
+            )
+
+        if selected_df.empty:
+
+            st.warning(
+                "Nessun MSC selezionato."
+            )
+
+        else:
+
+            st.markdown(
+                "#### Anteprima MSC selezionati"
+            )
+
+            preview_columns = [
+                "MSC",
+                "DPC",
+                "EPID_A",
+                "SAID_A",
+                "EPID_B",
+                "SAID_B",
+                "CNID",
+                "NRI",
+                "CAP",
+            ]
+
+            st.dataframe(
+                selected_df[preview_columns],
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            csv_buffer = io.StringIO()
+
+            selected_df.to_csv(
+                csv_buffer,
+                index=False,
+            )
+
+            output_name = (
+                f"{bsc_info.get('BSC', 'BSC')}"
+                "_MSC_selezionati.csv"
+                if bsc_info
+                else "MSC_selezionati.csv"
+            )
+
+            st.download_button(
+                "Scarica CSV degli MSC selezionati",
+                data=csv_buffer.getvalue(),
+                file_name=output_name,
+                mime="text/csv",
+                use_container_width=True,
+            )
+
+    else:
+
+        st.error(
+            "Tabella MSC non riconosciuta."
+        )
+
+    if msc_issues:
+
+        with st.expander(
+            f"Anomalie MSC ({len(msc_issues)})",
+            expanded=True,
+        ):
+            for issue in msc_issues:
+                st.warning(issue)
