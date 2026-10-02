@@ -2,13 +2,16 @@ import streamlit as st
 import pandas as pd
 import re
 
+# ==========================================================
+# CONFIG
+# ==========================================================
+
 st.set_page_config(
-    page_title="MSC Pool Builder V0",
+    page_title="MSC Pool Builder V1",
     layout="wide"
 )
 
-st.title("MSC Pool Builder V0")
-
+st.title("MSC Pool Builder V1")
 
 # ==========================================================
 # PARSER BSC
@@ -35,24 +38,19 @@ def parse_bsc(text):
 
         if len(r) > 5:
 
-            # prima riga A
-
             if (
                 len(r[0]) > 0
                 and len(r[1]) > 0
-                and "BBG" in r[3]
+                and len(r[2]) > 0
+                and len(r[3]) > 0
             ):
-
                 first_row = r
                 continue
-
-            # seconda riga B
 
             if (
                 len(r) > 3
                 and r[3].startswith("BBG")
             ):
-
                 second_row = r
 
                 if first_row:
@@ -96,7 +94,6 @@ def looks_like_msc(name):
             name.strip()
         )
     )
-
 
 def parse_msc(text):
 
@@ -142,49 +139,132 @@ def parse_msc(text):
 
     return pd.DataFrame(rows)
 
+# ==========================================================
+# DIAGNOSTICA FILE
+# ==========================================================
+
+def detect_excel_engine(uploaded_file):
+
+    uploaded_file.seek(0)
+
+    header = uploaded_file.read(8)
+
+    uploaded_file.seek(0)
+
+    if header.startswith(b"PK"):
+        return "openpyxl"
+
+    if header.startswith(b"\xd0\xcf\x11\xe0"):
+        return "xlrd"
+
+    return None
 
 # ==========================================================
-# UI
+# UPLOAD
 # ==========================================================
 
-tab_bsc, tab_msc = st.tabs(
+st.header("Upload LLD")
+
+uploaded_file = st.file_uploader(
+    "Carica LLD",
+    type=["xls", "xlsx"]
+)
+
+auto_read_success = False
+
+if uploaded_file:
+
+    st.subheader("Informazioni File")
+
+    st.write(
+        f"**Nome:** {uploaded_file.name}"
+    )
+
+    st.write(
+        f"**Dimensione:** {uploaded_file.size:,} byte"
+    )
+
+    engine = detect_excel_engine(
+        uploaded_file
+    )
+
+    st.write(
+        f"**Engine rilevato:** {engine}"
+    )
+
+    try:
+
+        uploaded_file.seek(0)
+
+        workbook = pd.ExcelFile(
+            uploaded_file,
+            engine=engine
+        )
+
+        auto_read_success = True
+
+        st.success(
+            "Workbook aperto correttamente"
+        )
+
+        st.write(
+            workbook.sheet_names
+        )
+
+    except Exception as e:
+
+        st.warning(
+            "Impossibile leggere il workbook. "
+            "Attivata modalità manuale."
+        )
+
+        st.exception(e)
+
+# ==========================================================
+# FALLBACK MANUALE
+# ==========================================================
+
+st.header("Modalità Manuale")
+
+tab1, tab2 = st.tabs(
     [
         "Tabella BSC",
         "Tabella MSC"
     ]
 )
 
-with tab_bsc:
+with tab1:
 
     bsc_text = st.text_area(
-        "Incolla la tabella BSC",
+        "Incolla tabella BSC",
         height=250
     )
 
-with tab_msc:
+with tab2:
 
     msc_text = st.text_area(
-        "Incolla la tabella MSC",
+        "Incolla tabella MSC",
         height=400
     )
 
+# ==========================================================
+# ANALISI
+# ==========================================================
 
 if st.button(
     "Analizza",
     use_container_width=True
 ):
 
-    # ==========================================
+    # --------------------------
     # BSC
-    # ==========================================
+    # --------------------------
 
     bsc_info = parse_bsc(
         bsc_text
     )
 
-    st.subheader(
-        "Informazioni BSC"
-    )
+    st.header("BSC")
 
     if bsc_info:
 
@@ -192,17 +272,17 @@ if st.button(
 
         c1.metric(
             "BSC",
-            bsc_info.get("BSC", "")
+            bsc_info["BSC"]
         )
 
         c2.metric(
             "SPC",
-            bsc_info.get("SPC", "")
+            bsc_info["SPC"]
         )
 
         c3.metric(
             "SPID",
-            bsc_info.get("SPID", "")
+            bsc_info["SPID"]
         )
 
         st.json(
@@ -215,15 +295,15 @@ if st.button(
             "Tabella BSC non riconosciuta"
         )
 
-    # ==========================================
+    # --------------------------
     # MSC
-    # ==========================================
+    # --------------------------
 
     msc_df = parse_msc(
         msc_text
     )
 
-    st.subheader(
+    st.header(
         f"MSC trovati ({len(msc_df)})"
     )
 
@@ -233,6 +313,15 @@ if st.button(
             msc_df,
             use_container_width=True,
             height=500
+        )
+
+        st.download_button(
+            "Scarica CSV",
+            msc_df.to_csv(
+                index=False
+            ),
+            "msc_pool.csv",
+            "text/csv"
         )
 
     else:
